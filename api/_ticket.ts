@@ -3,7 +3,7 @@
 //
 // El problema. `/api/suggest` compone tres `motion` a medida de la foto y el
 // usuario elige uno en la pantalla siguiente, así que ese texto tiene que
-// sobrevivir a un viaje de ida y vuelta por el móvil. Devolverlo en claro y
+// sobrevivir a un viaje de ida y vuelta por el navegador. Devolverlo en claro y
 // aceptarlo de vuelta convertiría el prototipo en un generador de vídeo con
 // prompt libre y nuestra clave de fal: exactamente lo que la regla de "ningún
 // cliente compone prompts" existe para impedir.
@@ -16,8 +16,13 @@
 // Por qué firmar y no guardar en una base de datos: no hay estado que mantener,
 // no hay TTL que purgar y el prototipo despliega en Vercel sin tocar Redis. El
 // coste es que el ticket lleva su propia caducidad dentro (`exp`).
+//
+// Web Crypto y no `node:crypto`: es la misma primitiva (HMAC-SHA256) con dos
+// ventajas. Sirve igual en cualquier runtime —Node, edge, un Worker— y, sobre
+// todo, es la única forma de que este fichero se compile sin `@types/node`, que
+// el build de Vercel no instala. `subtle.verify` compara además en tiempo
+// constante por contrato, así que no hay que escribirlo a mano.
 
-import { createHmac, timingSafeEqual, randomBytes } from 'node:crypto';
 import { isIntensity, type Intensity } from './_modes';
 
 export interface TicketPayload {
@@ -35,45 +40,76 @@ export interface TicketPayload {
 // pasar por la visión (la foto puede haberse quedado obsoleta en la pantalla).
 const TTL_MS = 10 * 60 * 1000;
 
+const enc = new TextEncoder();
+const dec = new TextDecoder();
+
+const b64url = (bytes: Uint8Array): string => {
+  let bin = '';
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+};
+
+// `Uint8Array<ArrayBuffer>` y no `Uint8Array` a secas: desde TS 5.7 el tipo es
+// genérico sobre el buffer, y el genérico por defecto incluye SharedArrayBuffer,
+// que Web Crypto no acepta. Fijarlo aquí evita un `as any` en cada llamada.
+const fromB64url = (s: string): Uint8Array<ArrayBuffer> => {
+  const bin = atob(s.replace(/-/g, '+').replace(/_/g, '/'));
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+};
+
 // Sin secreto configurado se genera uno al arrancar la función. Es SUFICIENTE
 // para lo que el ticket protege (que el cliente no escriba el prompt) y falla
 // del lado seguro: cada instancia serverless firma con el suyo, así que un
-// ticket emitido por otra simplemente no verifica y el cliente cae al catálogo.
-// En un despliegue serio se pone `VIVO_TICKET_SECRET` y deja de haber sorpresas.
-const secret = (): Buffer => {
-  const env = process.env.VIVO_TICKET_SECRET;
-  if (env && env.length >= 16) return Buffer.from(env, 'utf8');
-  if (!ephemeral) ephemeral = randomBytes(32);
-  return ephemeral;
-};
-let ephemeral: Buffer | null = null;
+// ticket emitido por otra simplemente no verifica y el cliente ve "ese modo ha
+// caducado". En un despliegue serio se pone `VIVO_TICKET_SECRET`.
+let keyPromise: Promise<CryptoKey> | null = null;
 
-const b64url = (b: Buffer): string => b.toString('base64url');
+function hmacKey(): Promise<CryptoKey> {
+  if (keyPromise) return keyPromise;
+  const configured = process.env.VIVO_TICKET_SECRET;
+  const raw =
+    configured && configured.length >= 16
+      ? enc.encode(configured)
+      : crypto.getRandomValues(new Uint8Array(32));
+  keyPromise = crypto.subtle.importKey('raw', raw, { name: 'HMAC', hash: 'SHA-256' }, false, [
+    'sign',
+    'verify',
+  ]);
+  return keyPromise;
+}
 
-export function signTicket(p: Omit<TicketPayload, 'exp'>): string {
+export async function signTicket(p: Omit<TicketPayload, 'exp'>): Promise<string> {
   const payload: TicketPayload = { ...p, exp: Date.now() + TTL_MS };
-  const body = b64url(Buffer.from(JSON.stringify(payload), 'utf8'));
-  const mac = b64url(createHmac('sha256', secret()).update(body).digest());
-  return `${body}.${mac}`;
+  const body = b64url(enc.encode(JSON.stringify(payload)));
+  const mac = await crypto.subtle.sign('HMAC', await hmacKey(), enc.encode(body));
+  return `${body}.${b64url(new Uint8Array(mac))}`;
 }
 
 /** `null` para cualquier ticket que no sea nuestro, esté tocado o haya caducado. */
-export function verifyTicket(ticket: unknown): TicketPayload | null {
+export async function verifyTicket(ticket: unknown): Promise<TicketPayload | null> {
   if (typeof ticket !== 'string' || ticket.length > 4096) return null;
   const dot = ticket.lastIndexOf('.');
   if (dot <= 0) return null;
   const body = ticket.slice(0, dot);
-  const mac = ticket.slice(dot + 1);
 
-  const expected = b64url(createHmac('sha256', secret()).update(body).digest());
-  const a = Buffer.from(mac, 'utf8');
-  const b = Buffer.from(expected, 'utf8');
-  // longitudes distintas → timingSafeEqual lanza, así que se comprueba antes;
-  // la longitud del MAC no es secreta.
-  if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
+  let valid: boolean;
+  try {
+    valid = await crypto.subtle.verify(
+      'HMAC',
+      await hmacKey(),
+      fromB64url(ticket.slice(dot + 1)),
+      enc.encode(body)
+    );
+  } catch {
+    // base64 inválido en la firma: no es nuestro y no hay más que mirar
+    return null;
+  }
+  if (!valid) return null;
 
   try {
-    const parsed = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')) as TicketPayload;
+    const parsed = JSON.parse(dec.decode(fromB64url(body))) as TicketPayload;
     if (typeof parsed?.motion !== 'string' || !parsed.motion.trim()) return null;
     if (!isIntensity(parsed?.intensity)) return null;
     if (typeof parsed?.exp !== 'number' || Date.now() > parsed.exp) return null;

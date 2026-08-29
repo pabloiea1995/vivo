@@ -14,17 +14,23 @@ let fails = 0;
 const ok = (name, cond, extra) => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${name}${cond ? '' : '  <- ' + extra}`); if (!cond) fails++; };
 
 // --- ticket ---
-const t = signTicket({ motion: 'rain falls', intensity: 'wild', label: 'Diluvio' });
-const v = verifyTicket(t);
+// Web Crypto es asíncrono, así que esta parte va dentro de una función.
+async function ticketChecks() {
+const t = await signTicket({ motion: 'rain falls', intensity: 'wild', label: 'Diluvio' });
+const v = await verifyTicket(t);
 ok('ticket round-trip', v && v.motion === 'rain falls' && v.intensity === 'wild' && v.label === 'Diluvio', JSON.stringify(v));
-ok('ticket rejects tampered payload', verifyTicket('x' + t) === null);
+ok('ticket rejects tampered payload', (await verifyTicket('x' + t)) === null);
 const [body, mac] = t.split('.');
 const forged = Buffer.from(JSON.stringify({ motion: 'anything I want', intensity: 'wild', label: 'x', exp: Date.now() + 1e6 })).toString('base64url');
-ok('ticket rejects forged payload with old mac', verifyTicket(`${forged}.${mac}`) === null);
-ok('ticket rejects garbage', verifyTicket('nope') === null && verifyTicket(null) === null && verifyTicket(123) === null);
-ok('ticket rejects bad intensity', verifyTicket(signTicket({ motion: 'm', intensity: 'nope', label: 'l' })) === null);
+ok('ticket rejects forged payload with old mac', (await verifyTicket(`${forged}.${mac}`)) === null);
+ok('ticket rejects garbage',
+   (await verifyTicket('nope')) === null && (await verifyTicket(null)) === null && (await verifyTicket(123)) === null);
+ok('ticket rejects bad intensity',
+   (await verifyTicket(await signTicket({ motion: 'm', intensity: 'nope', label: 'l' }))) === null);
+}
 
 // --- prompts ---
+function syncChecks() {
 const p = buildVideoPrompt({ motion: 'The dog blinks.', intensity: 'subtle' });
 ok('prompt names the first frame', /first frame/i.test(p), p.slice(0, 80));
 ok('prompt forbids speech', /no speech/i.test(p));
@@ -54,5 +60,11 @@ ok('rejects non-base64', readPhoto('<script>'.padEnd(600, 'x')).code === 'invali
 ok('rejects oversize', readPhoto('A'.repeat(4_000_001)).code === 'image_too_large');
 ok('rejects tiny', readPhoto('AAAA').code === 'invalid_image');
 
-console.log(fails ? `\n${fails} FAILED` : '\nall green');
-process.exit(fails ? 1 : 0);
+}
+
+(async () => {
+  await ticketChecks();
+  syncChecks();
+  console.log(fails ? `\n${fails} FAILED` : '\nall green');
+  process.exit(fails ? 1 : 0);
+})();

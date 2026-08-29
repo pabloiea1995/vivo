@@ -109,7 +109,7 @@ llega a ningún sitio**.
 | `api/_visionPrompts.ts` | Lo que se le pide a GPT al mirar la foto. |
 | `api/_videoPrompts.ts` | Las guardas de identidad, encuadre, textura fotográfica y audio, más la libertad por intensidad. |
 | `api/_modes.ts` | El catálogo fijo y la forma de un modo. |
-| `api/_ticket.ts` | El sobre cerrado. |
+| `api/_ticket.ts` | El sobre cerrado (HMAC con Web Crypto: sin `@types/node`, el build de Vercel compila limpio). |
 | `api/_origin.ts` | Origen + cerradura compartida. |
 | `api/_pricing.ts` | Precios = listas blancas. |
 | `public/index.html` | Las tres capas del encuadre y los mandos. |

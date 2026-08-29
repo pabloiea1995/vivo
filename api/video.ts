@@ -53,7 +53,7 @@ export default async function handler(req: any, res: any): Promise<void> {
     return;
   }
 
-  const mode = resolveMode(body);
+  const mode = await resolveMode(body);
   if (!mode) {
     // Un ticket caducado es lo normal (diez minutos mirando la foto) y el
     // cliente sabe rehacer /api/suggest; se distingue para que no lo trate
@@ -176,8 +176,8 @@ interface ResolvedMode {
  * No hay una tercera. Un `motion` suelto en el cuerpo se ignora, y ese es todo
  * el punto: el prompting vive en el servidor.
  */
-function resolveMode(body: Record<string, unknown>): ResolvedMode | null {
-  const payload = verifyTicket(body.ticket);
+async function resolveMode(body: Record<string, unknown>): Promise<ResolvedMode | null> {
+  const payload = await verifyTicket(body.ticket);
   if (payload) return { motion: payload.motion, intensity: payload.intensity, label: payload.label };
 
   // Un ticket presente que no verifica es un NO, no una invitación a elegir por

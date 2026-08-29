@@ -65,7 +65,7 @@ export default async function handler(req: any, res: any): Promise<void> {
 
   res.setHeader('x-vivo-source', vision.modes.length ? 'vision' : 'catalog');
   res.status(200).json({
-    modes: modes.map(toWire),
+    modes: await Promise.all(modes.map(toWire)),
     source: vision.modes.length ? 'vision' : 'catalog',
     subject: vision.subject,
     model: vision.modes.length ? VISION_MODEL : null,
@@ -83,12 +83,12 @@ export default async function handler(req: any, res: any): Promise<void> {
 // medusas") es medio chiste, y leerlo en el chip lo gasta antes de verlo: el
 // carrusel enseña "Sorpresa 🎲", el nombre real va dentro del ticket y sale a
 // la luz en la respuesta de /api/video, cuando el vídeo ya está.
-const toWire = (m: Mode): SuggestedMode => ({
+const toWire = async (m: Mode): Promise<SuggestedMode> => ({
   id: m.id,
   label: m.surprise ? 'Sorpresa' : m.label,
   emoji: m.surprise ? '🎲' : m.emoji,
   surprise: !!m.surprise,
-  ticket: signTicket({ motion: m.motion, intensity: m.intensity, label: m.label }),
+  ticket: await signTicket({ motion: m.motion, intensity: m.intensity, label: m.label }),
 });
 
 // Tres del catálogo repartidos por intensidad, más la sorpresa. Es el plan B, y

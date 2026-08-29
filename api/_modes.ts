@@ -127,16 +127,23 @@ export const CATALOG: Mode[] = [
 export const byId = (id: string): Mode | undefined => CATALOG.find((m) => m.id === id);
 
 /**
- * Los cuatro del plan B, elegidos a mano y en este orden.
+ * Los cuatro del plan B: uno contenido para anclar, dos espectaculares y la
+ * sorpresa — la misma forma que devuelve la visión.
  *
- * A mano y no "uno de cada intensidad": el carrusel de respaldo tiene que
- * parecer una selección, no un filtro sobre una lista. Uno contenido para
- * anclar, dos que impresionan, y la sorpresa.
+ * Los dos del medio se sortean. Cuesta una línea y evita lo peor de un plan B:
+ * que quien se lo encuentre dos veces piense que la app tiene cuatro modos
+ * fijos. Con la visión caída el carrusel es peor, pero al menos no es el mismo.
  */
-const FALLBACK_IDS = ['breathe', 'ufo', 'psychedelic', 'chaos'];
-
-export const fallbackModes = (): Mode[] =>
-  FALLBACK_IDS.map((id) => byId(id)).filter(Boolean) as Mode[];
+export function fallbackModes(): Mode[] {
+  const quiet = byId('breathe') as Mode;
+  const surprise = CATALOG.find((m) => m.surprise) as Mode;
+  const spectacle = CATALOG.filter((m) => m !== quiet && !m.surprise);
+  for (let i = spectacle.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [spectacle[i], spectacle[j]] = [spectacle[j]!, spectacle[i]!];
+  }
+  return [quiet, ...spectacle.slice(0, 2), surprise];
+}
 
 /** El modo que se usa en una llamada directa, sin ticket ni id. */
 export const FALLBACK_MODE = CATALOG[0];

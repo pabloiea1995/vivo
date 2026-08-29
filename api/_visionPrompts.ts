@@ -26,6 +26,9 @@
 //  4. **La sorpresa es sorpresa de verdad.** Si se le pide "una cuarta opción
 //     creativa" devuelve una cuarta variación educada. Se le pide explícitamente
 //     lo que NO se le ocurriría al usuario.
+//  5. **Los ejes se sortean en cada petición** (abajo). Sin eso, el mismo prompt
+//     converge: a la tercera foto vuelven a salir la nave y la tormenta, y el
+//     carrusel parece un menú fijo aunque cada opción se haya generado al vuelo.
 
 const SYSTEM = [
   'You direct 5-second video clips generated from a single photograph.',
@@ -44,7 +47,9 @@ const SYSTEM = [
   'in the street, a kaiju rising behind the buildings, a portal tearing open, the whole scene',
   'melting into psychedelia, snow burying everything in seconds, the room flooding, a meteor',
   'shower, the place aging a thousand years. Be bold — a viewer should want to show it to someone.',
-  'The two must not be variations of each other: pick two clearly different kinds of event.',
+  'Each request assigns you a different AXIS for each of the two; work the one you are given',
+  'rather than falling back on whatever came to mind first. Never make them variations of',
+  'each other.',
   '',
   'What makes these good is that they FIT THIS PHOTO. Use what you can see: the sky it has room',
   'for, the water it contains, the street it looks down, the horizon behind it, the scale of the',
@@ -99,6 +104,94 @@ const LANGS: Record<string, string> = {
 // lista blanca de `_pricing.ts`, que es la que sabe tarifar.
 export const VISION_MODEL = process.env.VIVO_VISION_MODEL || 'gpt-5.6-luna';
 
+/**
+ * Y a qué se cae si ese modelo no existe en la cuenta.
+ *
+ * Merece la pena porque el fallo es INVISIBLE: un 404 de "model not found" hace
+ * que `/api/suggest` responda 200 con el catálogo fijo, y desde fuera eso no se
+ * distingue de "la app tiene cuatro modos fijos". Un modelo de respaldo que
+ * seguro existe convierte un producto roto en uno un poco peor.
+ */
+export const VISION_FALLBACK_MODEL = process.env.VIVO_VISION_FALLBACK || 'gpt-5-mini';
+
+// ─── La baraja ───────────────────────────────────────────────────────────────
+//
+// El problema que resuelve: aunque cada foto pasa por el modelo, con el mismo
+// prompt y un tema recurrente ("propón espectáculo") las respuestas convergen.
+// A la tercera foto vuelven a salir la nave y la tormenta, y el carrusel PARECE
+// un menú fijo aunque no lo sea.
+//
+// Dos palancas, y la segunda es la que de verdad funciona:
+//
+//  1. Temperatura alta. Ayuda, pero no la aceptan todos los modelos y por sí
+//     sola solo cambia el adorno: sigue proponiendo la misma idea con otras
+//     palabras.
+//  2. **Ejes forzados.** En cada petición se sortean dos ejes distintos y se le
+//     exige que la opción 2 trabaje sobre uno y la 3 sobre el otro. Eso cambia
+//     la ESTRUCTURA de la respuesta, no el vocabulario, y es lo que hace que la
+//     misma foto dé cosas distintas dos veces seguidas.
+//
+// Los ejemplos van como registro, no como menú, y se le dice explícitamente:
+// son el tono, no la lista de la compra.
+
+const AXES: Array<{ id: string; brief: string }> = [
+  { id: 'scale', brief: 'SCALE — something colossal arrives, or the scene turns miniature' },
+  { id: 'genre', brief: 'GENRE — the photo becomes another kind of film: noir, horror, anime, western, silent movie' },
+  { id: 'creature', brief: 'CREATURE — something alive that should not be there walks, swims, flies or crawls in' },
+  { id: 'material', brief: 'MATERIAL — everything turns to another substance: gold, glass, clay, paper, sand, ice' },
+  { id: 'time', brief: 'TIME — the scene ages, rewinds, races through seasons or freezes mid-instant' },
+  { id: 'physics', brief: 'PHYSICS — gravity gives up, things float, fall upwards or hang suspended' },
+  { id: 'liquid', brief: 'LIQUID — water floods in, or the whole scene turns out to be underwater' },
+  { id: 'light', brief: 'LIGHT — impossible light takes over: aurora, eclipse, neon, bioluminescence, a second sun' },
+  { id: 'crowd', brief: 'CROWD — the place fills with something in numbers: a parade, a swarm, a stampede' },
+  { id: 'machine', brief: 'MACHINE — craft, mechs, robots or impossible engineering arrive' },
+  { id: 'elements', brief: 'ELEMENTS — fire, lava, blizzard, sandstorm or a storm of something that is not weather' },
+  { id: 'dream', brief: 'DREAM — the scene melts, loops, mirrors itself or dissolves into psychedelia' },
+];
+
+// Ejemplos concretos, sueltos y de registros muy distintos: hay que enseñarle
+// el LISTÓN, no darle un catálogo. Todos caben sobre una foto cualquiera.
+const FLAVOURS = [
+  'a mothership sliding silently over the rooftops',
+  'a caped figure landing hard enough to crack the ground',
+  'the whole street knee-deep in water, fish drifting past',
+  'everything slowly turning to solid gold',
+  'a dragon passing overhead, its shadow crossing the frame',
+  'the place ageing five hundred years in five seconds',
+  'a swarm of butterflies erupting out of nowhere',
+  'the sky splitting open to reveal a second sky behind it',
+  'gravity letting go and everything drifting upwards',
+  'the scene re-shot as 1940s black-and-white noir, rain and all',
+  'lava cracking up through the ground',
+  'a blizzard burying everything in seconds',
+  'the whole thing rendered in stop-motion clay',
+  'an aurora igniting overhead and washing the colours out',
+  'a giant hand reaching down from above the frame',
+  'the camera revealing it was all inside a snow globe',
+  'a parade marching through, out of nowhere',
+  'everything blooming with vegetation, vines swallowing it',
+  'a meteor shower streaking down behind it',
+  'the scene folding into a kaleidoscope of itself',
+  'a colossal creature standing up in the far distance',
+  'neon signs igniting one by one until it is a cyberpunk street',
+  'the ground opening into a bottomless drop',
+  'a school of jellyfish drifting through the air like it is water',
+];
+
+/** n elementos al azar, sin repetir. */
+function draw<T>(pool: readonly T[], n: number): T[] {
+  const copy = [...pool];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j]!, copy[i]!];
+  }
+  return copy.slice(0, Math.min(n, copy.length));
+}
+
+// Alta a propósito: aquí se quiere invención, no precisión. El techo de la API
+// es 2 y por encima de ~1,3 empieza a devolver etiquetas raras.
+const TEMPERATURE = Number(process.env.VIVO_VISION_TEMPERATURE) || 1.15;
+
 const OPTION_SCHEMA = {
   type: 'object',
   properties: {
@@ -111,20 +204,57 @@ const OPTION_SCHEMA = {
   additionalProperties: false,
 } as const;
 
-/** Cuerpo listo para POST /v1/chat/completions. */
-export function buildVisionRequest(input: VisionPromptInput): Record<string, unknown> {
+export interface VisionRequestOptions {
+  /** el modelo a usar; por defecto el configurado */
+  model?: string;
+  /**
+   * Mandar `temperature`. Los modelos de razonamiento la rechazan con un 400,
+   * así que el llamante puede quitarla y reintentar (ver `suggest.ts`).
+   */
+  temperature?: boolean;
+}
+
+/**
+ * Cuerpo listo para POST /v1/chat/completions.
+ *
+ * OJO: **no es determinista**. Cada llamada sortea dos ejes y una mano de
+ * ejemplos, que es justo lo que hace que la misma foto no dé siempre lo mismo.
+ */
+export function buildVisionRequest(
+  input: VisionPromptInput,
+  opts: VisionRequestOptions = {}
+): Record<string, unknown> {
   const language = LANGS[(input.locale || 'es').slice(0, 2).toLowerCase()] || 'Spanish';
+  const [axisA, axisB] = draw(AXES, 2);
+  const flavours = draw(FLAVOURS, 6);
+
+  const brief = [
+    'Propose the four options for this photograph: one quiet, two spectacular, one surprise.',
+    '',
+    'For this photo, option 2 must work on this axis:',
+    `  ${axisA!.brief}`,
+    'and option 3 on this one:',
+    `  ${axisB!.brief}`,
+    'Those two axes are assigned, not suggestions. If an axis seems hard for this particular',
+    'photo, that is the interesting part — find the version of it that fits what you can see.',
+    '',
+    'For register only, some things other clips have done:',
+    ...flavours.map((f) => `  · ${f}`),
+    'That list is the LEVEL you should aim at, not a menu. Do not reuse one of those unless it',
+    'genuinely is the best fit here; you are expected to come up with something not on the list.',
+    '',
+    `Write "label" in ${language}; keep "motion" in English.`,
+  ].join('\n');
+
   return {
-    model: VISION_MODEL,
+    model: opts.model || VISION_MODEL,
+    ...(opts.temperature === false ? {} : { temperature: TEMPERATURE }),
     messages: [
       { role: 'system', content: SYSTEM },
       {
         role: 'user',
         content: [
-          {
-            type: 'text',
-            text: `Propose the four options for this photograph: one quiet, two spectacular, one surprise. Write "label" in ${language}; keep "motion" in English.`,
-          },
+          { type: 'text', text: brief },
           // `detail: 'low'` a propósito: la decisión es "qué hay aquí y qué
           // podría moverse", no leer la matrícula del coche del fondo. En alta
           // resolución la llamada cuesta varias veces más y las propuestas no
@@ -157,6 +287,20 @@ export function buildVisionRequest(input: VisionPromptInput): Record<string, unk
 }
 
 /** Lo que enseñaría un panel de prompts sin provocar una llamada. */
-export function describeVisionPrompt(): { model: string; system: string } {
-  return { model: VISION_MODEL, system: SYSTEM };
+export function describeVisionPrompt(): {
+  model: string;
+  fallbackModel: string;
+  temperature: number;
+  system: string;
+  axes: string[];
+  flavours: number;
+} {
+  return {
+    model: VISION_MODEL,
+    fallbackModel: VISION_FALLBACK_MODEL,
+    temperature: TEMPERATURE,
+    system: SYSTEM,
+    axes: AXES.map((a) => a.id),
+    flavours: FLAVOURS.length,
+  };
 }

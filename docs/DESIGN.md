@@ -31,6 +31,33 @@ La versión anterior mezclaba las dos en una sola línea ("no añadas personas,
 animales ni objetos"), y por eso la mitad del catálogo nuevo habría sido
 imposible: el modelo obedece y devuelve cinco segundos de nada.
 
+## 0 bis. Cómo se consigue que no se repita
+
+Con el catálogo nuevo apareció el problema siguiente: aunque cada foto pase por
+el modelo, el mismo prompt converge. A la tercera foto vuelven a salir la nave y
+la tormenta, y el carrusel PARECE un menú fijo aunque cada opción se haya
+generado al vuelo. Es un fallo peor que tener modos fijos de verdad, porque
+encima se paga la llamada.
+
+Dos palancas, y la segunda es la que funciona:
+
+1. **Temperatura alta** (1.15). Ayuda poco: sube la variedad del vocabulario,
+   no la de la idea. Y no todos los modelos la aceptan — los de razonamiento
+   devuelven un 400, así que el servidor lo detecta una vez y deja de mandarla.
+2. **Ejes sorteados.** En cada petición se eligen dos de doce (escala, género,
+   criatura, material, tiempo, física, líquido, luz, multitud, máquina,
+   elementos, sueño) y se le EXIGE que la opción 2 trabaje sobre uno y la 3
+   sobre el otro. Eso cambia la estructura de la respuesta, no las palabras, y
+   es lo que hace que la misma foto dé cosas distintas dos veces seguidas.
+
+Los ejemplos concretos (24, se sortean 6) van explícitamente como *registro, no
+menú*: "esto es el listón, se espera que propongas algo que no esté en la
+lista". Sin esa frase el modelo elige de la lista, que es exactamente el menú
+fijo que se quería evitar.
+
+El botón "🎲 Otras" existe por lo mismo: pedir otras cuatro ideas cuesta la
+cuatrocientésima parte de un clip, así que conviene que se note.
+
 ## 1. Por qué la visión propone y no elige
 
 Lo obvio sería que GPT mirase la foto y devolviera *el* mejor vídeo. Se descartó

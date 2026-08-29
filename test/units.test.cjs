@@ -97,6 +97,41 @@ ok('cinematic solo trae lo que cae del cielo',
 let threw = false; try { buildVideoPrompt({ motion: '  ', intensity: 'subtle' }); } catch { threw = true; }
 ok('empty motion throws', threw);
 
+// --- variedad ---
+//
+// La queja que originó esto: "los modos parecen fijos". Lo eran de facto — el
+// mismo prompt converge — así que cada petición sortea dos ejes y una mano de
+// ejemplos. Estas comprobaciones son las que impiden que un refactor
+// distraído devuelva un prompt constante sin que nada falle en pantalla.
+const { buildVisionRequest, describeVisionPrompt } = require(BUILD + '_visionPrompts');
+const { fallbackModes } = require(BUILD + '_modes');
+
+const briefOf = (r) => r.messages[1].content[0].text;
+const req = (o) => buildVisionRequest({ imageDataUri: 'data:image/jpeg;base64,AAAA', locale: 'es' }, o);
+
+const briefs = new Set(Array.from({ length: 12 }, () => briefOf(req())));
+ok('el prompt cambia entre peticiones', briefs.size > 6, `${briefs.size}/12 distintos`);
+ok('asigna dos ejes', /option 2 must work on this axis/i.test(briefOf(req())));
+ok('los ejes son de la lista', (() => {
+  const ids = describeVisionPrompt().axes;
+  const b = briefOf(req()).toUpperCase();
+  return ids.filter((i) => b.includes(i.toUpperCase() + ' —')).length === 2;
+})());
+ok('los ejemplos son registro, no menú', /not a menu/i.test(briefOf(req())));
+ok('manda temperatura por defecto', req().temperature > 1);
+ok('...y se puede quitar', req({ temperature: false }).temperature === undefined);
+ok('el modelo se puede sobreescribir', req({ model: 'gpt-5-mini' }).model === 'gpt-5-mini');
+ok('hay modelo de respaldo distinto del principal',
+   describeVisionPrompt().fallbackModel !== describeVisionPrompt().model);
+
+// El plan B también varía: encontrárselo dos veces igual es lo que hace pensar
+// que la app tiene cuatro modos fijos.
+const sets = new Set(Array.from({ length: 12 }, () => fallbackModes().map((m) => m.id).join(',')));
+ok('el catálogo de respaldo también varía', sets.size > 1, [...sets]);
+ok('...y siempre trae el contenido primero y la sorpresa al final',
+   [...sets].every((s) => s.startsWith('breathe,') && s.endsWith(',chaos')), [...sets]);
+ok('...siempre cuatro', fallbackModes().length === 4);
+
 // --- pricing ---
 const promo = new Date(Date.UTC(2026, 7, 20));
 const after = new Date(Date.UTC(2026, 8, 2));

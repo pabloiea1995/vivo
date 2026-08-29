@@ -163,6 +163,15 @@ const ok = (name, cond, extra) => {
   ok('el primero nace elegido', await page.$eval('.mode', (e) => e.getAttribute('aria-selected')) === 'true');
   ok('la foto se ve debajo', await page.isVisible('#shot'));
 
+  // Volver a tirar los dados: otra llamada de visión, ni foto ni clip.
+  ok('se pueden pedir otras ideas', await page.isVisible('#reroll'));
+  await page.click('#reroll');
+  await page.waitForSelector('.mode:not(.skeleton)', { timeout: 10000 });
+  ok('...y eso es UNA llamada de visión más y ningún clip',
+     received.suggest.length === 2 && received.video.length === 0,
+     { suggest: received.suggest.length, video: received.video.length });
+  ok('...sobre la MISMA foto', received.suggest[1].imageBase64 === received.suggest[0].imageBase64);
+
   // Elegir por toque: el chip no centrado se centra, no se aplica.
   await page.click('.mode:nth-child(3)'); // :nth-child cuenta el ::before? no: los espaciadores son pseudoelementos
   await page.waitForTimeout(600);
@@ -226,7 +235,7 @@ const ok = (name, cond, extra) => {
   await page.waitForTimeout(600);
   await page.click('#shutter');
   await page.waitForSelector('#again:not([hidden])', { timeout: 15000 });
-  ok('otro modo no vuelve a llamar a la visión', received.suggest.length === 1, received.suggest.length);
+  ok('otro modo no vuelve a llamar a la visión', received.suggest.length === 2, received.suggest.length);
   ok('y reutiliza la MISMA foto',
      received.video[1]?.imageBase64 === sent.imageBase64 && received.video[1]?.ticket === 'tkt-0.mac',
      received.video[1]?.ticket);

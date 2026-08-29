@@ -41,6 +41,15 @@ Las dos cosas se comprueban en un Chromium de verdad (`test/web.test.cjs`).
 
 ## Las otras tres
 
+**Los cuatro modos se inventan en cada foto, y no dos veces iguales.** El
+catálogo de `_modes.ts` es solo el plan B; lo normal es que GPT mire *tu* foto y
+escriba cuatro propuestas nuevas. Para que de verdad varíen no basta con subir
+la temperatura —eso cambia el vocabulario, no la idea—: cada petición **sortea
+dos ejes** (escala, género, criatura, material, tiempo, física, líquido, luz,
+multitud, máquina, elementos, sueño) y le exige que la opción 2 trabaje uno y la
+3 el otro, más una mano de seis ejemplos que se le dan como registro y no como
+menú. El botón "🎲 Otras" vuelve a tirar sobre la misma foto por ~0,0015 €.
+
 **Ningún cliente compone prompts.** La página manda datos —una foto, un idioma,
 un ticket— y el servidor escribe el texto (`api/_visionPrompts.ts`,
 `api/_videoPrompts.ts`). Afinar un modo es un despliegue, no una versión nueva
@@ -134,7 +143,7 @@ llega a ningún sitio**.
 |---|---|
 | `api/suggest.ts` | La foto entra, cuatro modos salen. Modera la foto, llama a la visión, firma los tickets. Cae al catálogo fijo si la visión falla. |
 | `api/video.ts` | El clip. Verifica el modo, modera, compone el prompt, llama a fal, estima el coste. |
-| `api/_visionPrompts.ts` | Lo que se le pide a GPT al mirar la foto. |
+| `api/_visionPrompts.ts` | Lo que se le pide a GPT al mirar la foto: el encargo, los ejes que se sortean y los ejemplos. |
 | `api/_videoPrompts.ts` | Las guardas de identidad, encuadre, textura fotográfica y audio, más la libertad por intensidad. |
 | `api/_modes.ts` | El catálogo fijo y la forma de un modo. |
 | `api/_ticket.ts` | El sobre cerrado (HMAC con Web Crypto: sin `@types/node`, el build de Vercel compila limpio). |

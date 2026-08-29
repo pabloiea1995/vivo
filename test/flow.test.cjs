@@ -141,7 +141,61 @@ const ok = (n, c, x) => { console.log(`${c ? 'PASS' : 'FAIL'}  ${n}${c ? '' : ' 
   ok('vision down -> 200 with the catalog', res.code === 200 && res.body.source === 'catalog' && res.body.modes.length === 4, res.body);
   ok('catalog spreads the intensities and keeps a surprise', res.body.modes[3].surprise === true, res.body.modes.map(m=>m.label));
 
-  // 10 · la cerradura del backend
+  // 10 · los dos reintentos que impiden que el usuario se quede con el
+  //      catálogo fijo para siempre sin ninguna pista de por qué
+  const suggestPath = require.resolve('../.tmp/build/suggest');
+
+  async function withUpstream(reply) {
+    // Módulo recargado: las banderas de "este modelo no acepta temperature" y
+    // "este modelo no existe" se aprenden una vez por instancia, así que cada
+    // caso necesita una instancia limpia.
+    delete require.cache[suggestPath];
+    const fresh = require('../.tmp/build/suggest').default;
+    const sent = [];
+    const real = globalThis.fetch;
+    globalThis.fetch = async (url, init) => {
+      if (String(url).includes('/moderations')) return real(url, init);
+      if (!String(url).includes('chat/completions')) return real(url, init);
+      const body = JSON.parse(init.body);
+      sent.push(body);
+      const r = reply(body, sent.length);
+      return r || new Response(JSON.stringify({
+        model: body.model, usage: { prompt_tokens: 900, completion_tokens: 180 },
+        choices: [{ message: { content: VISION } }],
+      }), { status: 200 });
+    };
+    const res = mkRes();
+    await fresh({ method: 'POST', headers: {}, body: { imageBase64: PHOTO } }, res);
+    globalThis.fetch = real;
+    delete require.cache[suggestPath];
+    return { res, sent };
+  }
+
+  let t = await withUpstream((body) =>
+    body.temperature !== undefined
+      ? new Response(JSON.stringify({ error: { message: "Unsupported value: 'temperature'" } }), { status: 400 })
+      : null
+  );
+  ok('un modelo que rechaza temperature no tumba la visión',
+     t.res.code === 200 && t.res.body.source === 'vision', t.res.body?.reason);
+  ok('...se reintenta sin ella', t.sent.length === 2 && t.sent[1].temperature === undefined,
+     t.sent.map((b) => b.temperature));
+
+  t = await withUpstream((body) =>
+    body.model === 'gpt-5.6-luna'
+      ? new Response(JSON.stringify({ error: { message: 'The model does not exist' } }), { status: 404 })
+      : null
+  );
+  ok('un modelo inexistente cae al de respaldo, no al catálogo',
+     t.res.code === 200 && t.res.body.source === 'vision', t.res.body?.reason);
+  ok('...y lo dice en la respuesta', t.res.body.model === 'gpt-5-mini', t.res.body.model);
+
+  t = await withUpstream(() =>
+    new Response(JSON.stringify({ error: { message: 'boom' } }), { status: 500 })
+  );
+  ok('un 500 de verdad sí cae al catálogo', t.res.body.source === 'catalog', t.res.body);
+
+  // 11 · la cerradura del backend
   process.env.VIVO_APP_SECRET = 'la-llave';
   res = mkRes();
   await suggest({ method: 'POST', headers: {}, body: { imageBase64: PHOTO } }, res);

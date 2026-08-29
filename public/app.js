@@ -18,7 +18,7 @@ const el = {
   flip: $('flip'), mute: $('mute'),
   gate: $('gate'), start: $('start'), upload: $('upload'), gateError: $('gateError'),
   status: $('status'), carousel: $('carousel'),
-  again: $('again'), peek: $('peek'),
+  again: $('again'), peek: $('peek'), reroll: $('reroll'),
   shutter: $('shutter'), core: $('shutterCore'), zoom: $('zoom'),
   sheet: $('sheet'), sheetTitle: $('sheetTitle'), sheetBody: $('sheetBody'),
 };
@@ -378,6 +378,7 @@ function setStage(stage) {
 
   el.again.hidden = stage !== 'play';
   el.peek.hidden = stage !== 'play' || !S.clip?.prompt;
+  el.reroll.hidden = stage !== 'pick' || !S.modes.length;
 
   el.shutter.disabled = busy || stage === 'idle' || (stage === 'pick' && !S.modes.length);
   el.core.className = 'core' + (stage === 'play' ? ' again' : stage === 'live' || stage === 'idle' ? '' : ' apply');
@@ -427,15 +428,33 @@ async function usePhoto(photo) {
   S.photo = photo;
   S.clip = null;
   el.shot.src = photo.dataUrl;
+  await loadModes();
+}
+
+/**
+ * Pide (o vuelve a pedir) los cuatro modos para la foto que ya está puesta.
+ *
+ * Se puede llamar dos veces sobre la misma foto y salen cuatro cosas distintas:
+ * el servidor sortea los ejes en cada petición. Cuesta ~0,0015 € — la
+ * cuatrocientésima parte de un clip— así que volver a tirar los dados es de
+ * lejos lo más barato que hace esta app, y conviene que se note.
+ */
+async function loadModes() {
+  if (!S.photo) return;
   setStage('thinking');
   renderSkeleton();
   say('');
   try {
-    const result = await suggestModes(photo.base64);
+    const result = await suggestModes(S.photo.base64);
     S.modes = result.modes || [];
     renderModes(S.modes);
     setStage('pick');
-    if (result.source === 'catalog') say('Modos genéricos (no se pudo analizar la foto)');
+    if (result.source === 'catalog') {
+      say('Modos genéricos (no se pudo analizar la foto)');
+      // El motivo no se le enseña al usuario, pero es lo PRIMERO que se quiere
+      // saber cuando el carrusel sale genérico en un móvil de verdad.
+      console.warn('[vivo] visión no disponible:', result.reason);
+    }
   } catch (err) {
     // Bloqueada por moderación o sin servidor: se vuelve a la cámara. Dejar una
     // foto congelada con un aviso encima es un callejón sin salida.
@@ -523,6 +542,10 @@ el.again.addEventListener('click', () => {
 // Tocar el indicador vuelve al gran angular, que es a donde se quiere volver
 // nueve de cada diez veces.
 el.zoom.addEventListener('click', () => setZoom(S.zoom?.min ?? 1));
+
+// Otras cuatro ideas sobre la misma foto. Ni foto nueva ni clip: solo la
+// llamada de visión, que es la barata.
+el.reroll.addEventListener('click', loadModes);
 
 el.flip.addEventListener('click', async () => {
   S.facing = S.facing === 'environment' ? 'user' : 'environment';

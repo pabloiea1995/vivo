@@ -13,7 +13,7 @@
 import { applyAccessCheck } from './_origin';
 import { readBody, readPhoto, safeParse, methodGuard } from './_http';
 import { moderateImage } from './_moderation';
-import { buildVisionRequest, VISION_MODEL } from './_visionPrompts';
+import { buildVisionRequest, VISION_MODEL, VISION_FALLBACK_MODEL } from './_visionPrompts';
 import { fallbackModes, isIntensity, type Intensity, type Mode } from './_modes';
 import { signTicket } from './_ticket';
 import { isKnownTextModel, textCostMicros, microsToEur } from './_pricing';
@@ -68,7 +68,7 @@ export default async function handler(req: any, res: any): Promise<void> {
     modes: await Promise.all(modes.map(toWire)),
     source: vision.modes.length ? 'vision' : 'catalog',
     subject: vision.subject,
-    model: vision.modes.length ? VISION_MODEL : null,
+    model: vision.model || null,
     costEur: vision.costEur,
     // por qué se cayó al catálogo; el cliente no lo enseña, pero es lo primero
     // que se quiere saber cuando el carrusel sale genérico en el móvil
@@ -95,7 +95,59 @@ interface VisionResult {
   modes: Mode[];
   subject?: string;
   costEur?: number;
+  model?: string;
   reason?: string;
+}
+
+// Dos cosas que se aprenden UNA vez por instancia y no en cada foto, porque
+// costarían una llamada perdida cada vez:
+//
+//  - Si este modelo acepta `temperature`. Los de razonamiento la rechazan con
+//    un 400, y la temperatura alta es media palanca de variedad: se intenta
+//    siempre primero, y si dice que no, se deja de intentar.
+//  - Si el modelo configurado existe siquiera. Un `VIVO_VISION_MODEL` que la
+//    cuenta no tiene devuelve 404 en cada foto y el usuario ve el catálogo fijo
+//    para siempre, sin ninguna pista de por qué.
+let sendTemperature = true;
+let modelOverride: string | null = null;
+
+async function callVision(
+  key: string,
+  imageDataUri: string,
+  locale: string,
+  signal: AbortSignal
+): Promise<{ res: Response; text: string; model: string }> {
+  const model = modelOverride || VISION_MODEL;
+  const send = async (m: string, temperature: boolean) => {
+    const res = await fetch(OPENAI_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+      body: JSON.stringify(buildVisionRequest({ imageDataUri, locale }, { model: m, temperature })),
+      signal,
+    });
+    return { res, text: await res.text(), model: m };
+  };
+
+  let out = await send(model, sendTemperature);
+
+  // 400 por la temperatura: se reintenta sin ella y no se vuelve a mandar.
+  if (!out.res.ok && out.res.status === 400 && /temperature/i.test(out.text) && sendTemperature) {
+    console.warn(`[suggest] ${model} no acepta temperature; se deja de mandar`);
+    sendTemperature = false;
+    out = await send(model, false);
+  }
+
+  // El modelo no existe en esta cuenta: se pasa al de respaldo y se recuerda.
+  // Solo si está tarifado, que es la misma regla de siempre.
+  if (!out.res.ok && (out.res.status === 404 || /model/i.test(out.text)) && model !== VISION_FALLBACK_MODEL) {
+    if (isKnownTextModel(VISION_FALLBACK_MODEL)) {
+      console.warn(`[suggest] ${model} no disponible (${out.res.status}); se usa ${VISION_FALLBACK_MODEL}`);
+      modelOverride = VISION_FALLBACK_MODEL;
+      out = await send(VISION_FALLBACK_MODEL, sendTemperature);
+    }
+  }
+
+  return out;
 }
 
 async function proposeModes(imageDataUri: string, locale: string): Promise<VisionResult> {
@@ -108,15 +160,9 @@ async function proposeModes(imageDataUri: string, locale: string): Promise<Visio
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), VISION_TIMEOUT_MS);
   try {
-    const upstream = await fetch(OPENAI_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-      body: JSON.stringify(buildVisionRequest({ imageDataUri, locale })),
-      signal: ctrl.signal,
-    });
-    const text = await upstream.text();
+    const { res: upstream, text, model } = await callVision(key, imageDataUri, locale, ctrl.signal);
     if (!upstream.ok) {
-      console.warn(`[suggest] vision ${upstream.status}: ${text.slice(0, 200)}`);
+      console.warn(`[suggest] vision ${model} ${upstream.status}: ${text.slice(0, 200)}`);
       return { modes: [], reason: `upstream_${upstream.status}` };
     }
     const parsed = safeParse(text) as any;
@@ -124,9 +170,9 @@ async function proposeModes(imageDataUri: string, locale: string): Promise<Visio
     if (typeof content !== 'string' || !content) return { modes: [], reason: 'empty_completion' };
 
     const { modes, subject } = parseOptions(content);
-    const costEur = microsToEur(textCostMicros(parsed, VISION_MODEL));
-    if (!modes.length) return { modes: [], costEur, reason: 'unparseable_options' };
-    return { modes, subject, costEur };
+    const costEur = microsToEur(textCostMicros(parsed, model));
+    if (!modes.length) return { modes: [], costEur, model, reason: 'unparseable_options' };
+    return { modes, subject, costEur, model };
   } catch (err) {
     const aborted = (err as Error)?.name === 'AbortError';
     console.warn(`[suggest] vision ${aborted ? 'timeout' : 'error'}: ${(err as Error)?.message}`);

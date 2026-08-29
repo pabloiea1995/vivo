@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "Vivo",
+    "slug": "vivo",
+    "scheme": "vivo",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#000000",
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "app.vivo.prototype",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "app.vivo.prototype",
+      "permissions": ["android.permission.CAMERA"]
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Vivo usa la cámara para hacer la foto que vas a animar."
+        }
+      ],
+      "expo-video"
+    ]
+  }
+}

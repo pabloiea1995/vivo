@@ -1,0 +1,24 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Vivo — API</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root { color-scheme: dark }
+  body { background:#000; color:#eee; font:15px/1.6 ui-sans-serif,system-ui,sans-serif;
+         margin:0; padding:48px 24px; display:flex; justify-content:center }
+  main { max-width:34rem }
+  h1 { font-size:1.6rem; margin:0 0 .2em }
+  p { color:#9a9a9a }
+  code { background:#181818; padding:.15em .4em; border-radius:4px; color:#ffd166 }
+  a { color:#ffd166 }
+</style>
+<main>
+  <h1>Vivo</h1>
+  <p>Backend del prototipo. La interfaz es la app de Expo (<code>app/</code>);
+     aquí solo viven las tres funciones.</p>
+  <p>
+    <code>POST /api/suggest</code> — la foto entra, cuatro modos salen.<br>
+    <code>POST /api/video</code> — el clip, empezando por la foto.<br>
+    <code>GET <a href="/api/health">/api/health</a></code> — qué claves ve el servidor.
+  </p>
+</main>

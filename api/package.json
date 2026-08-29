@@ -1,0 +1,4 @@
+{
+  "//": "Fuerza a Vercel a compilar estas funciones como CommonJS: en ESM los imports relativos sin extensión (./_modes) no resuelven en tiempo de ejecución y toda función revienta al cargar.",
+  "type": "commonjs"
+}

@@ -1,0 +1,19 @@
+{
+  "name": "vivo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cámara que anima tus fotos: GPT mira lo que hay y propone cómo moverlo; el modelo de vídeo lo hace, empezando por tu foto.",
+  "workspaces": [
+    "app"
+  ],
+  "scripts": {
+    "test": "node scripts/test.mjs",
+    "typecheck": "tsc -p tsconfig.api.json --noEmit && yarn workspace vivo-app typecheck",
+    "dev:api": "vercel dev --listen 3000",
+    "app": "yarn workspace vivo-app start"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "~5.9.0"
+  }
+}

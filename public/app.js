@@ -109,7 +109,9 @@ async function post(path, body, timeoutMs) {
 }
 
 const suggestModes = (base64) =>
-  post('/api/suggest', { imageBase64: base64, locale: navigator.language?.slice(0, 2) || 'es' }, 20000);
+  // Holgado respecto al tope del servidor (15 s): si el cliente cortase antes,
+  // el usuario vería "sin conexión" cuando lo que hay es un modelo pensando.
+  post('/api/suggest', { imageBase64: base64, locale: navigator.language?.slice(0, 2) || 'es' }, 30000);
 
 const animate = (base64, mode) =>
   post('/api/video', mode.ticket ? { imageBase64: base64, ticket: mode.ticket }

@@ -20,10 +20,20 @@ import { isKnownTextModel, textCostMicros, microsToEur } from './_pricing';
 
 const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
 
-// Ocho segundos. Pasado eso, el catálogo es mejor respuesta que la buena: el
-// usuario está mirando una foto congelada con cuatro huecos girando, y la
-// función de Vercel tiene su propio tope por encima.
-const VISION_TIMEOUT_MS = Number(process.env.VIVO_VISION_TIMEOUT_MS) || 8000;
+// Quince segundos, y antes eran ocho.
+//
+// Ocho salió de suponer una llamada de texto corta. Pero esto es un modelo de
+// razonamiento mirando una imagen y devolviendo JSON estructurado, y encima
+// puede llevar dentro un reintento (si rechaza `temperature` se manda otra vez
+// sin ella) que consume del MISMO presupuesto, porque el AbortController se
+// arranca una sola vez. Con ocho segundos eso se agota antes de que el modelo
+// conteste, y el usuario ve el catálogo fijo sin ninguna pista de por qué.
+//
+// El tope sigue existiendo: pasado ese punto el catálogo es mejor respuesta que
+// la buena, porque el usuario está mirando una foto congelada. Pero tiene que
+// dar margen a que la respuesta llegue. La función de Vercel admite 60 s y el
+// cliente espera 30, así que quince cabe de sobra.
+const VISION_TIMEOUT_MS = Number(process.env.VIVO_VISION_TIMEOUT_MS) || 15000;
 
 export interface SuggestedMode {
   id: string;
@@ -70,9 +80,10 @@ export default async function handler(req: any, res: any): Promise<void> {
     subject: vision.subject,
     model: vision.model || null,
     costEur: vision.costEur,
-    // por qué se cayó al catálogo; el cliente no lo enseña, pero es lo primero
-    // que se quiere saber cuando el carrusel sale genérico en el móvil
+    // Por qué se cayó al catálogo. Lo enseña el cliente: cuando el carrusel sale
+    // genérico en un móvil de verdad, esto es lo único que evita adivinar.
     reason: vision.reason,
+    detail: vision.detail,
   });
 }
 
@@ -97,6 +108,14 @@ interface VisionResult {
   costEur?: number;
   model?: string;
   reason?: string;
+  /**
+   * Lo que dijo OpenAI, recortado. Viaja al cliente a propósito: `upstream_400`
+   * no dice nada, y "Unsupported parameter: temperature" lo dice todo. Es un
+   * prototipo y el que mira la pantalla es quien lo mantiene.
+   *
+   * No filtra nada: los errores de OpenAI no llevan la clave dentro.
+   */
+  detail?: string;
 }
 
 // Dos cosas que se aprenden UNA vez por instancia y no en cada foto, porque
@@ -163,7 +182,12 @@ async function proposeModes(imageDataUri: string, locale: string): Promise<Visio
     const { res: upstream, text, model } = await callVision(key, imageDataUri, locale, ctrl.signal);
     if (!upstream.ok) {
       console.warn(`[suggest] vision ${model} ${upstream.status}: ${text.slice(0, 200)}`);
-      return { modes: [], reason: `upstream_${upstream.status}` };
+      const msg = (safeParse(text) as any)?.error?.message;
+      return {
+        modes: [],
+        reason: `upstream_${upstream.status}`,
+        detail: String(msg || text).replace(/\s+/g, ' ').slice(0, 140),
+      };
     }
     const parsed = safeParse(text) as any;
     const content = parsed?.choices?.[0]?.message?.content;
@@ -171,7 +195,19 @@ async function proposeModes(imageDataUri: string, locale: string): Promise<Visio
 
     const { modes, subject } = parseOptions(content);
     const costEur = microsToEur(textCostMicros(parsed, model));
-    if (!modes.length) return { modes: [], costEur, model, reason: 'unparseable_options' };
+    if (!modes.length) {
+      // Cuántas opciones llegaron y por qué no valieron: si el modelo devuelve
+      // tres en vez de cuatro, o una con la etiqueta vacía, esto lo dice sin
+      // tener que reproducirlo.
+      const raw = (safeParse(content) as any)?.options;
+      return {
+        modes: [],
+        costEur,
+        model,
+        reason: 'unparseable_options',
+        detail: `${Array.isArray(raw) ? raw.length : 0} opciones`,
+      };
+    }
     return { modes, subject, costEur, model };
   } catch (err) {
     const aborted = (err as Error)?.name === 'AbortError';

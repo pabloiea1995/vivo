@@ -141,6 +141,22 @@ const ok = (n, c, x) => { console.log(`${c ? 'PASS' : 'FAIL'}  ${n}${c ? '' : ' 
   ok('vision down -> 200 with the catalog', res.code === 200 && res.body.source === 'catalog' && res.body.modes.length === 4, res.body);
   ok('catalog spreads the intensities and keeps a surprise', res.body.modes[3].surprise === true, res.body.modes.map(m=>m.label));
 
+  // 10 · la cerradura del backend
+  process.env.VIVO_APP_SECRET = 'la-llave';
+  res = mkRes();
+  await suggest({ method: 'POST', headers: {}, body: { imageBase64: PHOTO } }, res);
+  ok('sin clave -> 403', res.code === 403 && res.body.code === 'forbidden', res.body);
+  res = mkRes();
+  await video({ method: 'POST', headers: { 'x-vivo-key': 'otra' }, body: { imageBase64: PHOTO } }, res);
+  ok('clave equivocada -> 403', res.code === 403, res.body);
+  res = mkRes();
+  await suggest({ method: 'POST', headers: { 'x-vivo-key': 'la-llave' }, body: { imageBase64: PHOTO } }, res);
+  ok('clave correcta -> pasa', res.code === 200, res.body);
+  delete process.env.VIVO_APP_SECRET;
+  res = mkRes();
+  await suggest({ method: 'POST', headers: {}, body: { imageBase64: PHOTO } }, res);
+  ok('sin VIVO_APP_SECRET la puerta queda abierta', res.code === 200, res.body);
+
   console.log(fails ? `\n${fails} FAILED` : '\nall green');
   process.exit(fails ? 1 : 0);
 })();

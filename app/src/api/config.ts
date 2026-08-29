@@ -5,9 +5,13 @@
 // tocar sin recompilar. Sin ella apunta a localhost, que es lo que quiere
 // alguien que acaba de clonar el repo.
 //
-// Aquí NO hay ninguna clave. Las de OpenAI y fal viven en el servidor y no
-// tienen por qué existir en el binario; es la única forma de que publicar la
-// app no sea publicar la factura.
+// Aquí NO hay ninguna clave de proveedor. Las de OpenAI y fal viven en el
+// servidor y no tienen por qué existir en el binario; es la única forma de que
+// publicar la app no sea publicar la factura.
+//
+// `APP_SECRET` es otra cosa y conviene no confundirlas: es la cerradura del
+// backend (`VIVO_APP_SECRET` allí), y sí viaja en el binario. No autentica a
+// nadie — evita que quien encuentre la URL del despliegue le monte un bucle.
 
 import { Platform, NativeModules } from 'react-native';
 
@@ -21,6 +25,9 @@ function devHost(): string | null {
   const m = url && /^[a-z]+:\/\/([^:/]+)/i.exec(url);
   return m ? m[1] : null;
 }
+
+/** La cerradura del backend. Vacía = el servidor la tiene desactivada. */
+export const APP_SECRET = process.env.EXPO_PUBLIC_APP_SECRET || '';
 
 export const API_BASE = (() => {
   if (fromEnv) return fromEnv.replace(/\/$/, '');

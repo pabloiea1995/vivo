@@ -16,7 +16,7 @@
 // llegan del cliente, así que los dos se acotan aquí contra la tabla de precios
 // — sin eso, un `duration: 900` en el cuerpo es una factura de tres cifras.
 
-import { applyOriginCheck } from './_origin';
+import { applyAccessCheck } from './_origin';
 import { readBody, readPhoto, safeParse, methodGuard } from './_http';
 import { moderateImage, moderateText } from './_moderation';
 import { buildVideoPrompt } from './_videoPrompts';
@@ -36,7 +36,7 @@ const MIN_SECONDS = 5;
 const MAX_SECONDS = 10;
 
 export default async function handler(req: any, res: any): Promise<void> {
-  if (!applyOriginCheck(req, res)) return;
+  if (!applyAccessCheck(req, res)) return;
   if (!methodGuard(req, res)) return;
 
   const key = process.env.FALAI_TOKEN || process.env.FAL_KEY;

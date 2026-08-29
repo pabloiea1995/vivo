@@ -10,7 +10,7 @@
 // (`_modes.ts`) y `source: "catalog"`. Un carrusel genérico es un producto peor;
 // un carrusel vacío no es un producto.
 
-import { applyOriginCheck } from './_origin';
+import { applyAccessCheck } from './_origin';
 import { readBody, readPhoto, safeParse, methodGuard } from './_http';
 import { moderateImage } from './_moderation';
 import { buildVisionRequest, VISION_MODEL } from './_visionPrompts';
@@ -35,7 +35,7 @@ export interface SuggestedMode {
 }
 
 export default async function handler(req: any, res: any): Promise<void> {
-  if (!applyOriginCheck(req, res)) return;
+  if (!applyAccessCheck(req, res)) return;
   if (!methodGuard(req, res)) return;
 
   const body = readBody(req);

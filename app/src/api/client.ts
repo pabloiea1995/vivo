@@ -10,7 +10,7 @@
 // compone el prompt. Es lo que permite afinar un modo con un despliegue en vez
 // de con una actualización de la App Store esperando a que la gente la instale.
 
-import { API_BASE, LOCALE } from './config';
+import { API_BASE, APP_SECRET, LOCALE } from './config';
 
 export interface Mode {
   id: string;
@@ -50,6 +50,7 @@ const MESSAGES: Record<string, string> = {
   image_too_large: 'La foto es demasiado grande.',
   invalid_mode: 'Ese modo ha caducado. Vuelve a disparar.',
   fal_key_missing: 'El servidor no tiene configurada la clave de vídeo.',
+  forbidden: 'Esta copia de la app no tiene acceso al servidor.',
   upstream_error: 'El generador de vídeo ha fallado. Inténtalo otra vez.',
   network: 'Sin conexión con el servidor.',
 };
@@ -63,7 +64,10 @@ async function post<T>(path: string, body: unknown, timeoutMs: number): Promise<
   try {
     res = await fetch(`${API_BASE}${path}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(APP_SECRET ? { 'x-vivo-key': APP_SECRET } : {}),
+      },
       body: JSON.stringify(body),
       signal: ctrl.signal,
     });

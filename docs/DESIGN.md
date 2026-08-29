@@ -83,10 +83,12 @@ Dos consecuencias de diseño:
   cuatro tickets valen diez minutos, así que "Otro modo" vuelve al carrusel sin
   llamar a nadie. Cuesta un clip, que es lo que tiene que costar.
 
-No hay cuota ni límite por usuario: es un prototipo sin registro. **Cualquiera
-que llegue al despliegue puede gastar.** Antes de enseñárselo a más de cinco
-personas hace falta lo que Ridio tiene en `api/_quota.ts`: un contador por
-llamante con presupuesto real.
+No hay cuota ni límite por usuario: es un prototipo sin registro. La cerradura
+`VIVO_APP_SECRET` para al paseante que encuentre la URL, pero no al que instale
+la app: todos los instaladores comparten la misma clave, así que un binario
+distribuido la regala. Antes de enseñárselo a más de cinco personas hace falta lo
+que Ridio tiene en `api/_quota.ts`: un contador por llamante con presupuesto
+real.
 
 ## 5. Lo que queda por validar
 

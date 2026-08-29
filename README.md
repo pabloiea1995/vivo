@@ -44,6 +44,13 @@ convertiría el prototipo en un generador de vídeo con prompt libre y nuestra
 clave; se firma con HMAC (`api/_ticket.ts`) y se verifica al volver. El cliente
 recibe un sobre cerrado y lo devuelve sin abrirlo.
 
+**El backend tiene cerradura, y falla abierto hasta que la pones.** Sin
+`VIVO_APP_SECRET`, `/api/video` está abierto a quien encuentre la URL — y cada
+llamada gasta dinero. En cuanto la variable existe, toda petición debe traer esa
+cadena en `x-vivo-key` y el resto se va con un 403. La comprobación de origen no
+cubre esto: un `curl` no manda `Origin`, y tiene que pasar porque la app nativa
+tampoco lo manda.
+
 **Un modelo que no sabemos tarifar no es alcanzable.** Las tablas de
 `api/_pricing.ts` *son* las listas blancas. El vídeo se cobra por segundo ×
 resolución, no por generación: un clip de 5 s a 768p cuesta lo que trece

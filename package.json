@@ -8,9 +8,9 @@
   ],
   "scripts": {
     "test": "node scripts/test.mjs",
-    "typecheck": "tsc -p tsconfig.api.json --noEmit && yarn workspace vivo-app typecheck",
+    "typecheck": "tsc -p tsconfig.api.json --noEmit && npm run typecheck --workspace vivo-app",
     "dev:api": "vercel dev --listen 3000",
-    "app": "yarn workspace vivo-app start"
+    "app": "npm start --workspace vivo-app"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

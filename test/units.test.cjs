@@ -1,7 +1,7 @@
 // Las piezas sueltas del backend: el ticket firmado, las guardas del prompt,
 // la aritmética del precio y la validación de la foto.
 //
-// Corre contra el JavaScript compilado (`yarn test` lo genera en .tmp/), no
+// Corre contra el JavaScript compilado (`npm test` lo genera en .tmp/), no
 // contra los .ts, para probar exactamente lo que se despliega.
 process.env.VIVO_TICKET_SECRET = 'test-secret-at-least-16-chars';
 const BUILD = '../.tmp/build/';

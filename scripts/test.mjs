@@ -1,4 +1,4 @@
-// `yarn test`: compila las funciones y corre las pruebas contra el JavaScript
+// `npm test`: compila las funciones y corre las pruebas contra el JavaScript
 // resultante, que es lo que se despliega. Sin framework — son dos ficheros y
 // node ya trae todo lo que hace falta.
 

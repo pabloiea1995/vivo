@@ -6,6 +6,9 @@ GPT mira lo que acabas de fotografiar y propone cuatro formas de animarlo —tre
 pensadas para *esa* foto y una sorpresa—. Eliges una en un carrusel de filtros y
 el modelo de vídeo genera cinco segundos que **empiezan exactamente en tu foto**.
 
+**En marcha:** https://vivo-two.vercel.app — pendiente de que el proyecto de
+Vercel tenga sus variables de entorno (ver más abajo).
+
 Prototipo. Una página, tres funciones serverless, ningún registro, ninguna base
 de datos, ningún paso de compilación.
 
@@ -80,8 +83,26 @@ Con la cerradura puesta en el servidor, se le pasa a la página una vez por la
 URL y se queda recordada:
 
 ```
-https://<tu-despliegue>.vercel.app/?key=<VIVO_APP_SECRET>
+https://vivo-two.vercel.app/?key=<VIVO_APP_SECRET>
 ```
+
+### Lo que falta para que funcione de verdad
+
+Las claves no están en el repositorio ni pueden estarlo. En **Vercel → vivo →
+Settings → Environment Variables** (Production) hacen falta tres, y luego un
+redespliegue:
+
+| Variable | Sin ella |
+|---|---|
+| `FALAI_TOKEN` | `/api/video` responde 500: no hay clip. |
+| `OPENAI_API_KEY` | El carrusel sale genérico (catálogo) y no hay moderación. |
+| `VIVO_APP_SECRET` | **`/api/video` queda abierto a quien encuentre la URL**, y cada llamada cuesta ~0,18 €. Ponla a la vez que las otras dos. |
+
+`VIVO_TICKET_SECRET` (cualquier cadena de 16+ caracteres) es opcional pero
+recomendable: sin ella cada instancia serverless firma con un secreto propio y
+sale un "ese modo ha caducado" de vez en cuando.
+
+`GET /api/health` dice cuáles ve el servidor sin revelar ninguna.
 
 Verificación:
 

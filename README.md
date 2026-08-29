@@ -1,5 +1,8 @@
 # Vivo
 
+Web app experimental para crear vídeos cortos de cinco segundos, en distintos
+estilos, a partir de una foto.
+
 **Sacas el móvil, haces una foto, y la foto se mueve.**
 
 GPT mira lo que acabas de fotografiar y propone cuatro formas de animarlo —tres

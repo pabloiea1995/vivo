@@ -13,8 +13,9 @@ Prototipo. Una página, tres funciones serverless, ningún registro, ninguna bas
 de datos, ningún paso de compilación.
 
 ```
- cámara ──📸──▶ /api/suggest ──▶ 4 modos ──👆──▶ /api/video ──▶ ▶️ clip
-                (gpt-5.6-luna)                  (H3 Max i2v)
+ cámara ──📸──▶ /api/suggest ──▶ 4 modos + ×4 ──👆──▶ /api/video ──▶ ▶️ clip
+                (gpt-5.6-luna)        │                (H3 Max i2v)
+                                      └── deslizas entre ellos como un carrete
 ```
 
 ## La decisión que ordena todo lo demás
@@ -40,6 +41,24 @@ En el cliente la misma idea se sostiene dos veces:
 Las dos cosas se comprueban en un Chromium de verdad (`test/web.test.cjs`).
 
 ## Las otras tres
+
+**Elegir y ver no son dos pantallas.** Siempre estás *sobre* un modo: si ya
+tiene vídeo se reproduce, y si no, el disparador lo genera. Deslizar cambia de
+modo, y al llegar a uno que ya tiene clip arranca solo **desde el primer
+fotograma** — que es la misma foto en los cuatro. Por eso pasar de uno a otro se
+lee como cuatro futuros del mismo instante y no como cuatro vídeos sueltos.
+
+**El chip `×4`** al final del carrusel genera de una vez todos los que falten,
+en paralelo (~10 s en total en vez de 40), y al terminar salta al primero. Avisa
+de lo que cuesta *antes* de tocarlo: cuatro clips no son una cifra que deba
+descubrirse después de pagarla.
+
+**Los clips no se pierden.** Cada mp4 se descarga a un blob y se guarda en
+IndexedDB junto con la foto y los modos; al recargar, la sesión vuelve entera y
+no se regenera —ni se paga— nada. IndexedDB y no `localStorage` porque un clip
+pesa uno o dos megas y ahí caben cinco. La contrapartida es que el ticket de
+cada modo tiene que durar más que una sesión: por eso su TTL pasó de diez
+minutos a un día (`api/_ticket.ts` explica por qué eso no afloja nada).
 
 **Los cuatro modos se inventan en cada foto, y no dos veces iguales.** El
 catálogo de `_modes.ts` es solo el plan B; lo normal es que GPT mire *tu* foto y
@@ -151,7 +170,8 @@ llega a ningún sitio**.
 | `api/_pricing.ts` | Precios = listas blancas. |
 | `public/index.html` | Las tres capas del encuadre y los mandos. |
 | `public/app.css` | Pantalla completa con los mandos flotando; el carrusel con `scroll-snap`. |
-| `public/app.js` | La máquina de estados, la captura y el único sitio que habla con la API. |
+| `public/app.js` | La máquina de estados, los gestos, la captura y el único sitio que habla con la API. |
+| `public/store.js` | IndexedDB: la foto, los modos y los mp4 que sobreviven a cerrar la pestaña. |
 | `test/` | Los handlers con los proveedores simulados, las piezas sueltas, y la página en un Chromium. |
 
 Notas de diseño, coste real y lo que queda por validar: [`docs/DESIGN.md`](docs/DESIGN.md).

@@ -6,7 +6,7 @@
 
 import { describeVideoPrompts } from './_videoPrompts';
 import { describeVisionPrompt } from './_visionPrompts';
-import { videoPromoActive } from './_pricing';
+import { microsToEur, videoMicros, videoPromoActive } from './_pricing';
 import { CATALOG } from './_modes';
 
 export default function handler(req: any, res: any): void {
@@ -21,6 +21,11 @@ export default function handler(req: any, res: any): void {
     },
     visionModel: describeVisionPrompt().model,
     videoPromoActive: videoPromoActive(),
+    // Lo que cuesta un clip hoy. La página lo pide al arrancar para poder
+    // avisar de lo que vale el ×4 ANTES de tocarlo: cuatro clips no son una
+    // cifra que deba descubrirse después de pagarla. Va aquí y no en una
+    // constante del cliente porque la tarifa cambia el 1 de septiembre.
+    clipCostEur: microsToEur(videoMicros('minimax/h3-max/image-to-video', 5, '768P')),
     catalog: CATALOG.map((m) => ({ id: m.id, label: m.label, intensity: m.intensity })),
     ...(verbose ? { prompts: { vision: describeVisionPrompt(), video: describeVideoPrompts() } } : {}),
   });

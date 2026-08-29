@@ -1,57 +1,60 @@
-// Vivo — una pantalla, cinco estados, un solo botón que importa.
+// Vivo — una pantalla, y un carrusel de modos que se recorre con el dedo.
 //
-//   live ──disparo──▶ thinking ──GPT──▶ pick ──elección──▶ rendering ──fal──▶ play
-//    ▲                                   │                                    │
-//    └───────────── otra foto ───────────┴────────────────────────────────────┘
+//   live ──disparo──▶ thinking ──GPT──▶ browse ⇄ (generar un modo)
+//    ▲                                    │
+//    └──────────── nueva foto ────────────┘
 //
-// La foto NO se tira al llegar a `play`: se queda debajo del clip (es su primer
-// fotograma, literalmente) y sigue viva al volver a `pick`, así que probar un
-// segundo modo sobre la misma foto no cuesta ni una foto ni una llamada de
-// visión — los cuatro tickets valen diez minutos. Es lo que convierte el
-// juguete en algo que se usa dos veces seguidas.
+// El cambio que ordena el resto: **elegir y ver dejaron de ser dos estados**.
+// Antes se elegía un modo, se generaba, se veía el vídeo y para probar otro
+// había que volver atrás. Ahora siempre estás SOBRE un modo: si ya tiene vídeo
+// se reproduce, y si no, el disparador lo genera. Deslizar cambia de modo, y
+// eso convierte cuatro clips en algo que se recorre como un carrete.
+//
+// Lo que hace que funcione es que la foto no se mueve nunca. Está debajo de
+// todo, es el primer fotograma de los cuatro clips, y por eso pasar de uno a
+// otro no parpadea: lo único que cambia es lo que ocurre a partir del segundo
+// cero.
+
+import { clipKey, deleteClip, loadClip, loadSession, saveClip, saveSession } from '/store.js';
 
 const $ = (id) => document.getElementById(id);
 
 const el = {
   frame: $('frame'), preview: $('preview'), shot: $('shot'), clip: $('clip'),
   veil: $('veil'), veilLabel: $('veilLabel'), veilHint: $('veilHint'),
-  flip: $('flip'), mute: $('mute'),
+  flip: $('flip'), mute: $('mute'), zoom: $('zoom'), peek: $('peek'),
   gate: $('gate'), start: $('start'), upload: $('upload'), gateError: $('gateError'),
   status: $('status'), carousel: $('carousel'),
-  again: $('again'), peek: $('peek'), reroll: $('reroll'),
-  shutter: $('shutter'), core: $('shutterCore'), zoom: $('zoom'),
+  fresh: $('fresh'), reroll: $('reroll'),
+  shutter: $('shutter'), core: $('shutterCore'),
   sheet: $('sheet'), sheetTitle: $('sheetTitle'), sheetBody: $('sheetBody'),
 };
 
-// ─── Estado ──────────────────────────────────────────────────────────────────
+// El chip de "genera los cuatro". No es un modo: es una acción que vive al
+// final del carrusel porque es donde el pulgar llega después de haber visto
+// las otras opciones y haber dudado.
+const ALL = '__all__';
 
 const S = {
-  stage: 'idle',        // idle | live | thinking | pick | rendering | play
+  stage: 'idle',        // idle | live | thinking | browse
   facing: 'environment',
   stream: null,
-  photo: null,          // { dataUrl, base64 }
-  modes: [],
+  zoom: null,
+  photo: null,          // { id, dataUrl }
+  modes: [],            // + { key, clip?, busy?, failed? }
   index: 0,
-  clip: null,
   muted: true,
-  zoom: null,          // { min, max, value } si la cámara lo permite
+  clipCostEur: null,    // lo dice /api/health; sirve para avisar de lo que cuesta el ×4
 };
+
+const photoBase64 = () => S.photo.dataUrl.slice(S.photo.dataUrl.indexOf(',') + 1);
 
 // ─── El backend ──────────────────────────────────────────────────────────────
 //
-// El único sitio que habla con la API. Si mañana hay que meter reintentos o
-// telemetría, hay UN sitio donde meterlo — un fetch suelto en un manejador de
-// eventos es un error, no un atajo.
-//
-// Y fíjate en lo que no hay aquí: ni una línea de texto en inglés dirigida a un
-// modelo. La web manda datos (una foto, un idioma, un ticket) y el servidor
-// compone el prompt. Por eso afinar un modo es un despliegue y no un cambio de
-// cliente, y por eso la clave de fal no es utilizable para nada que no sea una
-// de nuestras animaciones.
+// El único sitio que habla con la API. Y fíjate en lo que no hay: ni una línea
+// de texto en inglés dirigida a un modelo. La web manda datos (una foto, un
+// idioma, un ticket) y el servidor compone el prompt.
 
-// La cerradura del backend (`VIVO_APP_SECRET`). Se pasa una vez por la URL
-// (?key=…) y se recuerda; así no hay que compilar nada para cambiarla ni queda
-// escrita en el repositorio.
 const KEY_STORE = 'vivo.key';
 const appKey = (() => {
   const url = new URL(location.href);
@@ -68,7 +71,7 @@ const appKey = (() => {
 const MESSAGES = {
   content_blocked: 'Esta foto no se puede animar: no cumple las normas de contenido.',
   image_too_large: 'La foto es demasiado grande.',
-  invalid_mode: 'Ese modo ha caducado. Vuelve a disparar.',
+  invalid_mode: 'Este modo ha caducado. Pide otras ideas.',
   fal_key_missing: 'El servidor no tiene configurada la clave de vídeo.',
   upstream_error: 'El generador de vídeo ha fallado. Inténtalo otra vez.',
   forbidden: 'Esta página no tiene acceso al servidor.',
@@ -105,23 +108,26 @@ async function post(path, body, timeoutMs) {
   return res.json();
 }
 
-/** La foto entra, cuatro modos salen. Nunca falla por culpa del modelo: si la
- *  visión se cae, el servidor responde 200 con el catálogo. */
 const suggestModes = (base64) =>
   post('/api/suggest', { imageBase64: base64, locale: navigator.language?.slice(0, 2) || 'es' }, 20000);
 
-/** El clip. `ticket` es lo que devolvió suggestModes, sin tocar; el servidor lo
- *  verifica antes de mirar lo que lleva dentro. */
 const animate = (base64, mode) =>
   post('/api/video', mode.ticket ? { imageBase64: base64, ticket: mode.ticket }
                                  : { imageBase64: base64, modeId: mode.id },
-       // Generoso: la inferencia son ~3 s, pero la subida de la foto desde un
-       // móvil con mala cobertura y la cola de fal en hora punta no.
-       150000);
+       // Generoso: la inferencia son ~3 s, pero con el ×4 hay cuatro clips en
+       // vuelo a la vez y la cola de fal se nota.
+       180000);
+
+// Cuánto cuesta un clip, para poder avisar antes del ×4. Es lo único que la
+// página le pregunta al servidor sin que el usuario haya hecho nada, y falla
+// en silencio: si no llega, el aviso sale sin cifra.
+fetch('/api/health')
+  .then((r) => r.json())
+  .then((h) => { S.clipCostEur = h?.clipCostEur ?? null; paint(); })
+  .catch(() => {});
 
 // ─── La cámara ───────────────────────────────────────────────────────────────
 
-/** La proporción del hueco visible. Manda sobre la cámara y sobre la captura. */
 const frameAspect = () => {
   const box = el.frame.getBoundingClientRect();
   return box.width && box.height ? box.width / box.height : 9 / 16;
@@ -129,18 +135,9 @@ const frameAspect = () => {
 
 async function openCamera() {
   stopCamera();
-
-  // Se pide la PROPORCIÓN de la pantalla, no una resolución.
-  //
-  // La primera versión pedía `width: 1080, height: 1920`. El navegador cumple
-  // eso como puede, y en un móvil lo que hace es coger el sensor apaisado y
-  // RECORTARLO al centro hasta que sea vertical — es decir, hace zoom. Se veía
-  // como una cámara con el zoom pegado, porque literalmente lo era, y además
-  // se le sumaba el recorte de `object-fit: cover` al pintarlo.
-  //
-  // Pidiendo `aspectRatio` y dejando la resolución libre, el navegador elige el
-  // modo del sensor que mejor encaja y el recorte que queda es el mínimo
-  // posible. El campo de visión vuelve a ser el de la cámara.
+  // Se pide la PROPORCIÓN de la pantalla, no una resolución: pedir 1080×1920
+  // hace que el navegador recorte el sensor apaisado al centro, que es zoom
+  // digital disfrazado (ver el historial de este fichero).
   S.stream = await navigator.mediaDevices.getUserMedia({
     video: { facingMode: S.facing, aspectRatio: { ideal: frameAspect() } },
     audio: false,
@@ -158,23 +155,14 @@ function stopCamera() {
 }
 
 // ─── Zoom ────────────────────────────────────────────────────────────────────
-//
-// Opcional de verdad: `zoom` es una capacidad que muchos navegadores de
-// escritorio y algún móvil no exponen. Si no está, el control no aparece — es
-// preferible a un botón que no hace nada.
 
 const track = () => S.stream?.getVideoTracks?.()[0] || null;
 
 function readZoom() {
   const caps = track()?.getCapabilities?.() || {};
   S.zoom = caps.zoom
-    ? {
-        min: caps.zoom.min ?? 1,
-        max: caps.zoom.max ?? 1,
-        value: track().getSettings?.().zoom ?? caps.zoom.min ?? 1,
-      }
+    ? { min: caps.zoom.min ?? 1, max: caps.zoom.max ?? 1, value: track().getSettings?.().zoom ?? caps.zoom.min ?? 1 }
     : null;
-  // Un rango de un solo punto es lo mismo que no tener zoom.
   if (S.zoom && S.zoom.max <= S.zoom.min) S.zoom = null;
   paintZoom();
 }
@@ -187,9 +175,7 @@ async function setZoom(v) {
     await track().applyConstraints({ advanced: [{ zoom: value }] });
     S.zoom.value = value;
     paintZoom();
-  } catch {
-    /* el dispositivo lo ha rechazado: se queda donde estaba */
-  }
+  } catch { /* el dispositivo lo ha rechazado */ }
 }
 
 function paintZoom() {
@@ -198,50 +184,84 @@ function paintZoom() {
   if (on) el.zoom.textContent = `${(S.zoom.value / S.zoom.min).toFixed(1)}×`;
 }
 
-// Pellizco para acercar, que es el gesto que ya tiene todo el mundo en el dedo.
-// Con eventos de puntero y no de toque: los mismos dos dedos valen en un
-// trackpad, y no hay que mantener dos ramas.
+// ─── Gestos sobre el encuadre ────────────────────────────────────────────────
+//
+// Dos dedos: zoom. Un dedo que se arrastra: cambiar de modo. Un dedo que no se
+// mueve: pausar o seguir. Los tres con eventos de puntero, así que el mismo
+// código sirve para dedo, ratón y trackpad.
+
 const pointers = new Map();
 let pinchStart = null;
+let swipe = null;
+
+// Cuánto hay que arrastrar para que cuente. Por debajo de esto la gente cambia
+// de modo sin querer al tocar para pausar, que es de las cosas que más molestan
+// de una interfaz por gestos.
+const SWIPE_PX = 45;
 
 el.frame.addEventListener('pointerdown', (e) => {
-  if (S.stage !== 'live') return;
   pointers.set(e.pointerId, e);
-  if (pointers.size === 2) pinchStart = { span: pinchSpan(), zoom: S.zoom?.value ?? 1 };
+  if (pointers.size === 2 && S.stage === 'live') {
+    pinchStart = { span: pinchSpan(), zoom: S.zoom?.value ?? 1 };
+    swipe = null;
+  } else if (pointers.size === 1) {
+    swipe = { x: e.clientX, y: e.clientY, t: Date.now() };
+  }
 });
 
 el.frame.addEventListener('pointermove', (e) => {
   if (!pointers.has(e.pointerId)) return;
   pointers.set(e.pointerId, e);
-  if (pointers.size !== 2 || !pinchStart || !S.zoom) return;
-  e.preventDefault();
-  const factor = pinchSpan() / pinchStart.span;
-  // Sobre el rango del dispositivo, no sobre el factor crudo: en una cámara con
-  // zoom de 1 a 8 un pellizco corto se comería todo el recorrido.
-  setZoom(pinchStart.zoom * factor);
+  if (pointers.size === 2 && pinchStart && S.zoom) {
+    e.preventDefault();
+    setZoom(pinchStart.zoom * (pinchSpan() / pinchStart.span));
+  }
+});
+
+el.frame.addEventListener('pointerup', (e) => {
+  const start = pointers.size === 1 ? swipe : null;
+  endPointer(e);
+  if (!start || S.stage !== 'browse') return;
+
+  const dx = e.clientX - start.x;
+  const dy = e.clientY - start.y;
+  // Horizontal de verdad: un arrastre en diagonal es casi siempre un intento de
+  // desplazar la página, no de cambiar de modo.
+  if (Math.abs(dx) >= SWIPE_PX && Math.abs(dx) > Math.abs(dy) * 1.5) {
+    goTo(S.index + (dx < 0 ? 1 : -1));
+  } else if (Math.abs(dx) < 10 && Math.abs(dy) < 10) {
+    togglePlay();
+  }
 });
 
 const endPointer = (e) => {
   pointers.delete(e.pointerId);
   if (pointers.size < 2) pinchStart = null;
+  if (pointers.size === 0) swipe = null;
 };
-el.frame.addEventListener('pointerup', endPointer);
 el.frame.addEventListener('pointercancel', endPointer);
+
+// Sin esto no hay gesto que valga, y el fallo es de los que se diagnostican mal.
+//
+// La foto es un <img>, y arrastrar una imagen inicia el drag-and-drop nativo del
+// navegador. Cuando eso pasa, el sistema se queda el puntero y a nosotros nos
+// llega `pointercancel` en vez de `pointerup`: el swipe simplemente NO ocurre,
+// sin ningún error en consola. El CSS lo evita en la mayoría de los casos y esto
+// cierra los que quedan (arrastres que empiezan sobre el vídeo, por ejemplo).
+el.frame.addEventListener('dragstart', (e) => e.preventDefault());
 
 function pinchSpan() {
   const [a, b] = [...pointers.values()];
   return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) || 1;
 }
 
-// Lo que se ve es lo que se manda. Literalmente, y aquí es donde se cumple.
+// ─── La captura ──────────────────────────────────────────────────────────────
 //
-// El preview va con `object-fit: cover`, así que el navegador YA está
-// recortando para llenar la pantalla. Capturar el fotograma entero de la cámara
-// metería en el vídeo cosas que el usuario nunca vio, y "el primer fotograma es
-// tu foto" dejaría de ser verdad justo en el detalle que la hace creíble. Así
-// que se reproduce aquí el mismo recorte, contra la proporción REAL del hueco
-// —la que tenga esta pantalla— y no contra una constante.
+// Lo que se ve es lo que se manda: el preview va con `object-fit: cover`, así
+// que aquí se reproduce ESE mismo recorte contra la proporción real del hueco.
+
 const LONG_SIDE = 1280;
+const even = (n) => Math.max(2, Math.round(n / 2) * 2);
 
 function coverCrop(w, h, aspect) {
   if (w / h > aspect) {
@@ -251,10 +271,6 @@ function coverCrop(w, h, aspect) {
   const sh = w / aspect;
   return { sx: 0, sy: (h - sh) / 2, sw: w, sh };
 }
-
-// Par, siempre: los codificadores de vídeo trabajan en bloques de 2 píxeles y
-// una dimensión impar es una forma barata de encontrarse un borde raro.
-const even = (n) => Math.max(2, Math.round(n / 2) * 2);
 
 function grab(source, w, h, mirror) {
   const aspect = frameAspect();
@@ -269,42 +285,52 @@ function grab(source, w, h, mirror) {
   if (mirror) { ctx.translate(out.w, 0); ctx.scale(-1, 1); }
   const { sx, sy, sw, sh } = coverCrop(w, h, aspect);
   ctx.drawImage(source, sx, sy, sw, sh, 0, 0, out.w, out.h);
-  // 0.72 y 1280 de lado largo: por debajo se nota en el primer fotograma, y por
-  // encima solo engorda un base64 que tiene que subir por la red del móvil y
-  // caber en el cuerpo de una función de Vercel (4,5 MB).
-  const dataUrl = canvas.toDataURL('image/jpeg', 0.72);
-  return { dataUrl, base64: dataUrl.slice(dataUrl.indexOf(',') + 1) };
+  return canvas.toDataURL('image/jpeg', 0.72);
 }
 
 // ─── El carrusel ─────────────────────────────────────────────────────────────
 
-function renderModes(modes) {
+const chips = () => [...el.carousel.querySelectorAll('.mode')];
+const current = () => S.modes[S.index] || null;   // null = el chip ×4
+const pending = () => S.modes.filter((m) => !m.clip && !m.busy);
+
+function renderModes() {
   el.carousel.className = 'carousel';
   el.carousel.innerHTML = '';
-  modes.forEach((mode, i) => {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = `mode${mode.surprise ? ' surprise' : ''}`;
-    btn.role = 'option';
-    btn.setAttribute('aria-selected', String(i === 0));
-    btn.innerHTML = `<span class="disc"></span><span class="name"></span>`;
-    // textContent y no innerHTML: la etiqueta la escribe un modelo, y aunque
-    // el servidor la recorta, meter texto ajeno en el DOM como HTML es una
-    // costumbre que solo hace falta perder una vez.
-    btn.querySelector('.disc').textContent = mode.emoji;
-    btn.querySelector('.name').textContent = mode.label;
-    // Tocar un chip lo trae al centro; tocar el que YA está en el centro lo
-    // aplica, igual que en Instagram el filtro ya seleccionado se abre.
-    btn.addEventListener('click', () => (i === S.index ? apply(modes[i]) : center(i)));
-    el.carousel.appendChild(btn);
-  });
-  S.index = 0;
-  center(0, 'auto');
+
+  S.modes.forEach((mode, i) => el.carousel.appendChild(chip(mode, i)));
+
+  const all = document.createElement('button');
+  all.type = 'button';
+  all.className = 'mode all';
+  all.dataset.key = ALL;
+  all.innerHTML = '<span class="disc"></span><span class="name"></span>';
+  all.querySelector('.disc').textContent = '⚡';
+  all.querySelector('.name').textContent = '×4';
+  all.addEventListener('click', () => (S.index === S.modes.length ? generateAll() : goTo(S.modes.length)));
+  el.carousel.appendChild(all);
+
+  paint();
+}
+
+function chip(mode, i) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = `mode${mode.surprise ? ' surprise' : ''}`;
+  btn.dataset.key = mode.key;
+  btn.innerHTML = '<span class="disc"></span><span class="name"></span>';
+  // textContent y no innerHTML: la etiqueta la escribe un modelo.
+  btn.querySelector('.disc').textContent = mode.emoji;
+  btn.querySelector('.name').textContent = mode.label;
+  // Tocar un chip lo trae al centro; tocar el que YA está en el centro lo
+  // aplica — genera si no hay vídeo, y lo rebobina si lo hay.
+  btn.addEventListener('click', () => (i === S.index ? act() : goTo(i)));
+  return btn;
 }
 
 function renderSkeleton() {
   el.carousel.className = 'carousel locked';
-  el.carousel.innerHTML = Array.from({ length: 4 })
+  el.carousel.innerHTML = Array.from({ length: 5 })
     .map(() => '<span class="mode skeleton"><span class="disc"></span><span class="name"></span></span>')
     .join('');
 }
@@ -318,22 +344,44 @@ function renderHint(text) {
   el.carousel.appendChild(p);
 }
 
-const chips = () => [...el.carousel.querySelectorAll('.mode:not(.skeleton)')];
+// Mientras el carrusel se está colocando SOLO, su scroll no significa nada.
+//
+// Sin esto hay una pelea: `goTo` fija el modo y lanza un desplazamiento suave,
+// el manejador de scroll se dispara a mitad de animación, mide que el chip del
+// centro todavía es el anterior y deshace la selección; el desplazamiento sigue,
+// vuelve a medir, y el modo oscila entre dos hasta que la animación acaba. En
+// pantalla se veía como que deslizar "a veces" no rebobinaba el vídeo.
+let settling = false;
+let settleTimer = 0;
 
-function center(i, behavior = 'smooth') {
-  chips()[i]?.scrollIntoView({ inline: 'center', block: 'nearest', behavior });
-  select(i);
+function markSettling() {
+  settling = true;
+  clearTimeout(settleTimer);
+  // Red de seguridad: `scrollend` no existe en todos los navegadores, y sin
+  // ella una animación que no termine dejaría el carrusel sordo para siempre.
+  settleTimer = setTimeout(() => (settling = false), 700);
 }
 
-function select(i) {
-  S.index = i;
-  chips().forEach((c, n) => c.setAttribute('aria-selected', String(n === i)));
+el.carousel.addEventListener('scrollend', () => {
+  clearTimeout(settleTimer);
+  settling = false;
+});
+
+/** Cambia de modo: centra el chip, pinta y arranca el vídeo si lo hay. */
+function goTo(i) {
+  const max = S.modes.length; // el ×4 ocupa la última posición
+  const next = Math.max(0, Math.min(max, i));
+  const moved = next !== S.index;
+  S.index = next;
+  markSettling();
+  chips()[next]?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+  paint();
+  show({ restart: moved });
 }
 
 // El chip del centro es el elegido. Se mide por posición real y no por
-// aritmética de anchos: con los espaciadores de los extremos y el `gap`, la
-// cuenta se desincroniza en cuanto cambia un tamaño, y una selección que no
-// coincide con lo que se ve es peor que ninguna.
+// aritmética de anchos: con los espaciadores y el `gap`, la cuenta se
+// desincroniza en cuanto cambia un tamaño.
 function nearest() {
   const box = el.carousel.getBoundingClientRect();
   const mid = box.left + box.width / 2;
@@ -351,48 +399,205 @@ el.carousel.addEventListener('scroll', () => {
   if (scrollTick) return;
   scrollTick = requestAnimationFrame(() => {
     scrollTick = 0;
-    if (S.stage !== 'pick') return;
+    if (S.stage !== 'browse' || settling) return;
     const i = nearest();
-    if (i !== S.index) select(i);
+    // Aquí NO se llama a goTo: goTo desplaza el carrusel, y desplazar desde el
+    // manejador de scroll es una pelea con el dedo del usuario.
+    if (i !== S.index) {
+      S.index = i;
+      paint();
+      show({ restart: true });
+    }
   });
 });
 
-// ─── Pintar el estado ────────────────────────────────────────────────────────
+// ─── El vídeo ────────────────────────────────────────────────────────────────
 
-function setStage(stage) {
-  S.stage = stage;
-  const busy = stage === 'thinking' || stage === 'rendering';
+/**
+ * Enseña lo que toque para el modo seleccionado.
+ *
+ * `restart: true` rebobina al segundo cero, que es lo que se quiere al cambiar
+ * de modo: los cuatro clips arrancan en el MISMO fotograma —la foto—, así que
+ * pasar de uno a otro se lee como cuatro futuros del mismo instante, no como
+ * cuatro vídeos sueltos. Si no se rebobinase, volver a un clip lo retomaría por
+ * la mitad y esa lectura se pierde.
+ */
+function show({ restart = false } = {}) {
+  const mode = current();
+  if (!mode?.clip) {
+    el.clip.pause();
+    el.clip.classList.remove('ready');
+    return;
+  }
+  if (el.clip.dataset.key !== mode.key) {
+    el.clip.classList.remove('ready');
+    el.clip.dataset.key = mode.key;
+    el.clip.src = mode.clip.src;
+  } else if (restart) {
+    el.clip.currentTime = 0;
+  }
+  el.clip.muted = S.muted;
+  el.clip.play().catch(() => {});
+}
+
+function togglePlay() {
+  if (!current()?.clip || !el.clip.classList.contains('ready')) return;
+  if (el.clip.paused) el.clip.play().catch(() => {});
+  else el.clip.pause();
+}
+
+// ─── Generar ─────────────────────────────────────────────────────────────────
+
+/**
+ * Un clip, y lo que cuesta guardarlo.
+ *
+ * El mp4 se descarga a un blob para meterlo en IndexedDB: la URL que devuelve
+ * fal caduca, así que persistir el enlace sería persistir un vídeo roto. Si la
+ * descarga falla (CORS, red), se sigue con la URL remota — el vídeo se ve igual
+ * pero no sobrevive a recargar, y eso se dice en la consola en vez de fingir
+ * que se guardó.
+ */
+async function keep(mode, data) {
+  const meta = { prompt: data.prompt, costEur: data.costEur, label: data.mode };
+  let blob = null;
+  try {
+    const r = await fetch(data.video.url);
+    if (r.ok) blob = await r.blob();
+  } catch { /* CORS o red */ }
+
+  if (!blob) {
+    console.warn('[vivo] el clip no se pudo descargar; solo vivirá esta sesión');
+    return { ...meta, src: data.video.url };
+  }
+  saveClip(clipKey(S.photo.id, mode.key), { ...meta, blob });
+  return { ...meta, blob, src: URL.createObjectURL(blob) };
+}
+
+async function generate(mode) {
+  if (!S.photo || mode.clip || mode.busy) return;
+  mode.busy = true;
+  mode.failed = null;
+  paint();
+  try {
+    const data = await animate(photoBase64(), mode);
+    mode.clip = await keep(mode, data);
+  } catch (err) {
+    mode.failed = err.message;
+    if (err.code === 'content_blocked' || err.code === 'invalid_mode') mode.dead = true;
+  } finally {
+    mode.busy = false;
+    paint();
+    if (current() === mode) show({ restart: true });
+  }
+}
+
+/**
+ * Los cuatro a la vez.
+ *
+ * En paralelo y no en cola: son ~10 s cada uno, así que en serie serían cuarenta
+ * segundos mirando una foto quieta. `allSettled` y no `all` porque si uno falla
+ * —moderación, un 5xx de fal— los otros tres ya están pagados y deben verse.
+ *
+ * Al terminar salta al primero que tenga vídeo, que es el gesto que el usuario
+ * iba a hacer de todas formas.
+ */
+async function generateAll() {
+  const targets = pending();
+  if (!targets.length) return;
+  await Promise.allSettled(targets.map(generate));
+  const first = S.modes.findIndex((m) => m.clip);
+  if (first >= 0) goTo(first);
+  else paint();
+}
+
+/** Lo que hace el disparador sobre el chip seleccionado. */
+function act() {
+  const mode = current();
+  if (!mode) return generateAll();          // el chip ×4
+  if (mode.clip) return show({ restart: true });
+  if (!mode.busy) return generate(mode);
+}
+
+// ─── Pintar ──────────────────────────────────────────────────────────────────
+
+function paint() {
+  const stage = S.stage;
+  const thinking = stage === 'thinking';
+  const working = S.modes.some((m) => m.busy);
+  const mode = current();
 
   el.gate.hidden = stage !== 'idle';
   el.preview.hidden = stage !== 'live';
   el.shot.hidden = stage === 'idle' || stage === 'live' || !S.photo;
-  el.clip.hidden = stage !== 'play';
+  el.clip.hidden = stage !== 'browse' || !mode?.clip;
   el.flip.hidden = stage !== 'live';
-  el.mute.hidden = stage !== 'play';
+  el.mute.hidden = !(stage === 'browse' && mode?.clip);
+  el.peek.hidden = !(stage === 'browse' && mode?.clip?.prompt);
 
-  el.veil.hidden = !busy;
-  if (busy) {
-    el.veilLabel.textContent = stage === 'thinking' ? 'Mirando la foto…' : 'Animando…';
-    el.veilHint.textContent = stage === 'rendering' ? 'unos 10 segundos' : '';
+  el.veil.hidden = !(thinking || (working && (!mode || mode.busy)));
+  if (!el.veil.hidden) {
+    const n = S.modes.filter((m) => m.busy).length;
+    el.veilLabel.textContent = thinking ? 'Mirando la foto…' : n > 1 ? `Animando ${n}…` : 'Animando…';
+    el.veilHint.textContent = thinking ? '' : 'unos 10 segundos';
   }
 
-  el.again.hidden = stage !== 'play';
-  el.peek.hidden = stage !== 'play' || !S.clip?.prompt;
-  el.reroll.hidden = stage !== 'pick' || !S.modes.length;
+  el.fresh.hidden = stage !== 'browse';
+  el.reroll.hidden = stage !== 'browse' || working;
 
-  el.shutter.disabled = busy || stage === 'idle' || (stage === 'pick' && !S.modes.length);
-  el.core.className = 'core' + (stage === 'play' ? ' again' : stage === 'live' || stage === 'idle' ? '' : ' apply');
-  el.core.textContent = stage === 'play' ? '↺' : stage === 'live' || stage === 'idle' ? '' : '▶';
-  el.shutter.setAttribute('aria-label', stage === 'play' ? 'Otra foto' : stage === 'live' ? 'Disparar' : 'Animar');
+  chips().forEach((c, i) => {
+    const m = S.modes[i];
+    c.setAttribute('aria-selected', String(i === S.index));
+    c.classList.toggle('busy', !!m?.busy);
+    c.classList.toggle('has-clip', !!m?.clip);
+    c.classList.toggle('failed', !!m?.failed);
+  });
 
-  el.carousel.classList.toggle('locked', stage !== 'pick');
-  chips().forEach((c, i) => c.classList.toggle('busy', stage === 'rendering' && i === S.index));
+  // El disparador dice lo que va a hacer, y sobre el ×4 dice cuánto cuesta.
+  const shutter =
+    stage === 'live' ? { glyph: '', kind: '', label: 'Disparar' }
+    : !mode ? { glyph: '⚡', kind: 'apply', label: 'Generar los cuatro' }
+    : mode.clip ? { glyph: '↺', kind: 'again', label: 'Repetir' }
+    : { glyph: '▶', kind: 'apply', label: 'Animar' };
+
+  el.core.className = `core ${shutter.kind}`.trim();
+  el.core.textContent = shutter.glyph;
+  el.shutter.setAttribute('aria-label', shutter.label);
+  el.shutter.disabled =
+    stage === 'idle' || thinking || (stage === 'browse' && (mode ? mode.busy || mode.dead : !pending().length));
+
+  el.carousel.classList.toggle('locked', stage !== 'browse');
   paintZoom();
+  paintStatus();
+}
+
+function paintStatus() {
+  if (S.stage !== 'browse') return;
+  const mode = current();
+
+  if (!mode) {
+    const n = pending().length;
+    const each = S.clipCostEur;
+    if (!n) return say('Los cuatro están generados');
+    return say(each ? `Genera los ${n} que faltan · ~${(n * each).toFixed(2)} €` : `Genera los ${n} que faltan`);
+  }
+  if (mode.failed) return say(mode.failed, true);
+  if (mode.busy) return say('');
+  if (mode.clip) {
+    // El nombre real de la sorpresa aparece AQUÍ y no en el chip: el carrusel
+    // decía "Sorpresa", y esto es el chiste contado en el momento correcto.
+    return say(`${mode.clip.label}${mode.clip.costEur != null ? ` · ${mode.clip.costEur.toFixed(2)} €` : ''}`);
+  }
+  say('Desliza para ver los modos · toca ▶ para animar este');
 }
 
 function say(text, isError = false) {
   el.status.textContent = text || '';
   el.status.classList.toggle('error', !!isError);
+}
+
+function setStage(stage) {
+  S.stage = stage;
+  paint();
 }
 
 // ─── El recorrido ────────────────────────────────────────────────────────────
@@ -401,111 +606,126 @@ async function begin() {
   el.gateError.hidden = true;
   try {
     await openCamera();
+    forget();
     setStage('live');
     renderHint('Haz una foto y te propongo cómo animarla');
     say('');
   } catch (err) {
-    // Denegado, sin cámara, o un contexto sin HTTPS. Se dice cuál, porque los
-    // tres se arreglan de forma distinta y "no se pudo" no ayuda a ninguno.
     el.gateError.hidden = false;
     el.gateError.textContent =
       err?.name === 'NotAllowedError' ? 'Has denegado la cámara. Actívala en los ajustes del navegador para esta página.'
       : err?.name === 'NotFoundError' ? 'Este dispositivo no tiene cámara. Puedes subir una foto.'
       : !window.isSecureContext ? 'La cámara solo funciona sobre HTTPS.'
       : 'No se pudo abrir la cámara. Puedes subir una foto.';
+    setStage('idle');
   }
 }
 
-async function shoot() {
-  const v = el.preview;
-  if (!v.videoWidth) return;
-  const photo = grab(v, v.videoWidth, v.videoHeight, S.facing === 'user');
-  stopCamera();
-  await usePhoto(photo);
+/** Suelta la foto y sus clips de la memoria (los de disco los pisa la siguiente). */
+function forget() {
+  S.modes.forEach((m) => m.clip?.blob && URL.revokeObjectURL(m.clip.src));
+  S.photo = null;
+  S.modes = [];
+  S.index = 0;
+  el.clip.removeAttribute('src');
+  el.clip.removeAttribute('data-key');
+  el.clip.load();
 }
 
-async function usePhoto(photo) {
-  S.photo = photo;
-  S.clip = null;
-  el.shot.src = photo.dataUrl;
+function shoot() {
+  const v = el.preview;
+  if (!v.videoWidth) return;
+  const dataUrl = grab(v, v.videoWidth, v.videoHeight, S.facing === 'user');
+  stopCamera();
+  return usePhoto(dataUrl);
+}
+
+async function usePhoto(dataUrl) {
+  forget();
+  S.photo = { id: `p${Date.now().toString(36)}`, dataUrl };
+  el.shot.src = dataUrl;
   await loadModes();
 }
 
 /**
- * Pide (o vuelve a pedir) los cuatro modos para la foto que ya está puesta.
+ * Pide (o vuelve a pedir) los modos para la foto que ya está puesta.
  *
- * Se puede llamar dos veces sobre la misma foto y salen cuatro cosas distintas:
- * el servidor sortea los ejes en cada petición. Cuesta ~0,0015 € — la
- * cuatrocientésima parte de un clip— así que volver a tirar los dados es de
- * lejos lo más barato que hace esta app, y conviene que se note.
+ * Cada llamada devuelve cuatro ideas distintas: el servidor sortea dos ejes por
+ * petición. Cuesta ~0,0015 € — la cuatrocientésima parte de un clip — así que
+ * volver a tirar los dados es lo más barato que hace esta app.
  */
 async function loadModes() {
   if (!S.photo) return;
+  // Los clips de la tirada anterior quedan huérfanos: sus modos ya no existen.
+  const old = S.modes;
   setStage('thinking');
   renderSkeleton();
   say('');
   try {
-    const result = await suggestModes(S.photo.base64);
-    S.modes = result.modes || [];
-    renderModes(S.modes);
-    setStage('pick');
+    const result = await suggestModes(photoBase64());
+    old.forEach((m) => {
+      if (m.clip?.blob) URL.revokeObjectURL(m.clip.src);
+      deleteClip(clipKey(S.photo.id, m.key));
+    });
+    // Una clave propia por modo, y no el `id` del servidor: los ids se repiten
+    // entre tiradas (ai-0…ai-3), así que usarlos haría que una tirada nueva
+    // heredase los vídeos de la anterior.
+    S.modes = (result.modes || []).map((m) => ({ ...m, key: uid() }));
+    S.index = 0;
+    renderModes();
+    setStage('browse');
+    saveSession(S.photo, S.modes);
     if (result.source === 'catalog') {
       say('Modos genéricos (no se pudo analizar la foto)');
-      // El motivo no se le enseña al usuario, pero es lo PRIMERO que se quiere
-      // saber cuando el carrusel sale genérico en un móvil de verdad.
       console.warn('[vivo] visión no disponible:', result.reason);
     }
   } catch (err) {
     // Bloqueada por moderación o sin servidor: se vuelve a la cámara. Dejar una
     // foto congelada con un aviso encima es un callejón sin salida.
     say(err.message, true);
-    S.photo = null;
+    forget();
     await begin();
   }
 }
 
-async function apply(mode) {
-  if (!S.photo) return;
-  say('');
-  setStage('rendering');
-  try {
-    const data = await animate(S.photo.base64, mode);
-    S.clip = { url: data.video.url, mode: data.mode, costEur: data.costEur, prompt: data.prompt };
-    playClip();
-  } catch (err) {
-    say(err.message, true);
-    // Un ticket caducado (diez minutos eligiendo) obliga a repetir la foto;
-    // cualquier otro fallo deja el carrusel donde estaba para reintentar.
-    if (err.code === 'invalid_mode') { S.photo = null; await begin(); }
-    else setStage('pick');
-  }
-}
+const uid = () =>
+  (crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`).slice(0, 12);
 
-function playClip() {
-  S.muted = true;
-  el.mute.textContent = '🔇';
-  el.clip.classList.remove('ready');
-  el.clip.muted = true;
-  el.clip.src = S.clip.url;
-  setStage('play');
-  // El nombre real de la sorpresa aparece AQUÍ y no antes: el chip decía
-  // "Sorpresa", y esto es el chiste contado en el momento correcto.
-  say(`${S.clip.mode}${S.clip.costEur != null ? ` · ${S.clip.costEur.toFixed(2)} €` : ''}`);
-  el.clip.play().catch(() => {});
-}
+/**
+ * Lo que había al cerrar la pestaña.
+ *
+ * Los clips valen 0,18 € y diez segundos cada uno, y no se pueden volver a
+ * pedir iguales porque el modelo no es determinista: perderlos al recargar es
+ * tirar dinero y una idea que no vuelve.
+ */
+async function restore() {
+  const saved = await loadSession();
+  if (!saved?.photo?.dataUrl || !saved.modes?.length) return false;
 
-async function reset() {
-  S.photo = null;
-  S.clip = null;
-  S.modes = [];
-  el.clip.removeAttribute('src');
-  el.clip.load();
-  await begin();
+  S.photo = saved.photo;
+  S.modes = saved.modes.map((m) => ({ ...m, busy: false, failed: null }));
+  el.shot.src = saved.photo.dataUrl;
+
+  const found = await Promise.all(
+    S.modes.map((m) => loadClip(clipKey(S.photo.id, m.key)))
+  );
+  found.forEach((rec, i) => {
+    if (rec?.blob) S.modes[i].clip = { ...rec, src: URL.createObjectURL(rec.blob) };
+  });
+
+  S.index = Math.max(0, S.modes.findIndex((m) => m.clip));
+  renderModes();
+  setStage('browse');
+  chips()[S.index]?.scrollIntoView({ inline: 'center', block: 'nearest' });
+  show({ restart: true });
+  return true;
 }
 
 // ─── Cableado ────────────────────────────────────────────────────────────────
 
 el.start.addEventListener('click', begin);
+el.fresh.addEventListener('click', begin);
+el.reroll.addEventListener('click', loadModes);
 
 el.upload.addEventListener('change', async (e) => {
   const file = e.target.files?.[0];
@@ -524,28 +744,9 @@ el.upload.addEventListener('change', async (e) => {
   }
 });
 
-el.shutter.addEventListener('click', () => {
-  if (S.stage === 'live') return shoot();
-  if (S.stage === 'play') return reset();
-  if (S.stage === 'pick') return apply(S.modes[S.index]);
-});
+el.shutter.addEventListener('click', () => (S.stage === 'live' ? shoot() : act()));
 
-el.again.addEventListener('click', () => {
-  // Vuelve al carrusel SIN volver a llamar a la visión: los tickets siguen
-  // valiendo, así que otro modo sobre la misma foto cuesta un clip y nada más.
-  el.clip.pause();
-  S.clip = null;
-  setStage('pick');
-  say('');
-});
-
-// Tocar el indicador vuelve al gran angular, que es a donde se quiere volver
-// nueve de cada diez veces.
 el.zoom.addEventListener('click', () => setZoom(S.zoom?.min ?? 1));
-
-// Otras cuatro ideas sobre la misma foto. Ni foto nueva ni clip: solo la
-// llamada de visión, que es la barata.
-el.reroll.addEventListener('click', loadModes);
 
 el.flip.addEventListener('click', async () => {
   S.facing = S.facing === 'environment' ? 'user' : 'environment';
@@ -559,22 +760,33 @@ el.mute.addEventListener('click', () => {
 });
 
 el.peek.addEventListener('click', () => {
-  el.sheetTitle.textContent = S.clip?.mode || '';
-  el.sheetBody.textContent = S.clip?.prompt || '';
+  const clip = current()?.clip;
+  el.sheetTitle.textContent = clip?.label || '';
+  el.sheetBody.textContent = clip?.prompt || '';
   el.sheet.hidden = false;
 });
 el.sheet.addEventListener('click', () => { el.sheet.hidden = true; });
 
-// Se enciende cuando hay algo que pintar: ver la nota de #clip en app.css.
-el.clip.addEventListener('canplay', () => el.clip.classList.add('ready'));
-el.clip.addEventListener('error', () => {
-  if (S.stage === 'play') say('El vídeo no se pudo reproducir.', true);
+// Teclado: en un portátil no hay dedo que deslizar, y el prototipo se enseña
+// tanto en escritorio como en móvil.
+document.addEventListener('keydown', (e) => {
+  if (S.stage !== 'browse') return;
+  if (e.key === 'ArrowRight') goTo(S.index + 1);
+  else if (e.key === 'ArrowLeft') goTo(S.index - 1);
+  else if (e.key === ' ') { e.preventDefault(); act(); }
 });
 
-// Volver a la pestaña con la cámara apagada por el sistema: se reabre sola.
+el.clip.addEventListener('canplay', () => el.clip.classList.add('ready'));
+el.clip.addEventListener('error', () => {
+  if (S.stage === 'browse' && current()?.clip) say('El vídeo no se pudo reproducir.', true);
+});
+
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden && S.stage === 'live' && !S.stream) begin();
 });
 
-setStage('idle');
+// Arranque: si hay una sesión guardada se entra directamente a ella, y la
+// cámara espera detrás del botón de "Nueva foto".
 renderHint('');
+paint();
+restore().catch(() => {});

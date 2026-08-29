@@ -35,10 +35,18 @@ export interface TicketPayload {
   exp: number;
 }
 
-// Diez minutos: lo que tarda alguien en mirar la foto, dudar entre cuatro
-// modos y decidirse. Más allá de eso, la sesión es otra y conviene volver a
-// pasar por la visión (la foto puede haberse quedado obsoleta en la pantalla).
-const TTL_MS = 10 * 60 * 1000;
+// Veinticuatro horas, y antes eran diez minutos.
+//
+// El cambio lo pide la persistencia: los clips generados sobreviven a cerrar la
+// pestaña, así que al volver el usuario ve su foto con los cuatro modos y espera
+// poder generar el que le faltaba. Con diez minutos, eso era un 400 seguro.
+//
+// Alargarlo no afloja nada que importe. Un ticket solo autoriza a generar el
+// movimiento que compuso ESTE servidor; sigue haciendo falta la foto y la clave
+// de la app, y el texto que lleva dentro no se vuelve peligroso por reposar. El
+// TTL corto se justificaba con "la sesión es otra", que era una intuición, no
+// una amenaza.
+const TTL_MS = 24 * 60 * 60 * 1000;
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();

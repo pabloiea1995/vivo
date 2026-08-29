@@ -58,6 +58,35 @@ fijo que se quería evitar.
 El botón "🎲 Otras" existe por lo mismo: pedir otras cuatro ideas cuesta la
 cuatrocientésima parte de un clip, así que conviene que se note.
 
+## 0 ter. El carrete, y las dos trampas que esconde
+
+Al juntar "guarda los vídeos", "desliza para cambiar de modo" y "el ×4", la app
+deja de tener dos estados (elegir / ver) y pasa a tener uno: estás sobre un
+modo, que tiene vídeo o no. Es un cambio pequeño de código y grande de
+sensación — cuatro clips que arrancan en el mismo fotograma y se recorren con el
+pulgar se leen como cuatro futuros del mismo instante.
+
+Dos cosas que costaron y que no se ven en el resultado:
+
+**El arrastre sobre una foto no es un gesto, es un drag-and-drop.** La foto es un
+`<img>`, y arrastrarla dispara el arrastre nativo del navegador: el sistema se
+queda el puntero y a la página le llega `pointercancel` en vez de `pointerup`.
+El swipe simplemente no ocurría, sin ningún error en consola. Se arregla con
+`user-drag: none` y un `preventDefault` en `dragstart`.
+
+**`scrollIntoView` y el manejador de scroll se pelean.** Al centrar un chip por
+código, el scroll suave dispara el manejador a mitad de animación, que mide que
+el chip del centro todavía es el anterior y deshace la selección; el
+desplazamiento sigue, vuelve a medir, y el modo oscila. En pantalla se veía como
+que deslizar "a veces" no rebobinaba el vídeo. Se arregla ignorando el scroll
+mientras el carrusel se coloca solo (`scrollend`, con temporizador de respaldo
+porque no todos los navegadores lo tienen).
+
+Y una decisión de producto: **el `×4` dice su precio antes de que lo toques**.
+Son cuatro clips, ~0,74 € de una vez. La cifra la da el servidor en
+`/api/health` y no una constante del cliente, porque la tarifa de fal cambia el
+1 de septiembre.
+
 ## 1. Por qué la visión propone y no elige
 
 Lo obvio sería que GPT mirase la foto y devolviera *el* mejor vídeo. Se descartó

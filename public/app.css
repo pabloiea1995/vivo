@@ -11,6 +11,8 @@
   --surprise: #c084fc;
   --danger: #ff6b6b;
   --hairline: rgba(255, 255, 255, 0.18);
+  --ok: #4ade80;
+  --all: #7dd3fc;
   --chrome: rgba(0, 0, 0, 0.55);
   --chip: 64px;
   --gap: 14px;
@@ -56,9 +58,20 @@ body {
   height: 100%;
   overflow: hidden;
   background: #0a0a0a;
-  /* el pellizco es NUESTRO: sin esto el navegador se queda el gesto y hace zoom
-     sobre la página en vez de sobre la cámara */
+  /* Los gestos sobre el encuadre son NUESTROS. Sin estas tres líneas el
+     navegador se queda cada uno por su cuenta: `touch-action` evita que el
+     pellizco haga zoom sobre la página, y las otras dos que arrastrar la foto
+     inicie un drag-and-drop nativo — que cancela el puntero y mata el swipe sin
+     dejar ni un error en consola. */
   touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.frame > video,
+.frame > img {
+  -webkit-user-drag: none;
+  user-drag: none;
 }
 
 .frame > video,
@@ -129,8 +142,8 @@ body {
   cursor: pointer;
 }
 .round.tr { top: max(14px, env(safe-area-inset-top)); right: 14px; }
+.round.tl { top: max(14px, env(safe-area-inset-top)); left: 14px; }
 .round[hidden] { display: none; }
-#mute:not([hidden]) ~ #flip, #flip[hidden] { display: none; }
 
 .zoom {
   position: absolute;
@@ -281,8 +294,42 @@ body {
   transform: scale(1.06);
 }
 .mode.surprise[aria-selected="true"] .disc { border-color: var(--surprise); }
-.mode.busy .disc { opacity: 0.45; }
+.mode.all[aria-selected="true"] .disc { border-color: var(--all); }
 .carousel.locked .mode { pointer-events: none; }
+
+/* El chip ×4: es una ACCIÓN, no un modo, y tiene que leerse como tal antes de
+   tocarlo — cuesta cuatro clips. De ahí el borde discontinuo. */
+.mode.all .disc {
+  border-style: dashed;
+  border-color: var(--all);
+  color: var(--all);
+}
+.mode.all .name { color: var(--all); }
+
+/* Un modo YA generado. El punto es la diferencia entre un carrusel de opciones
+   y un carrete: dice de un vistazo cuáles ya se pueden ver sin pagar nada. */
+.mode.has-clip .disc {
+  position: relative;
+  border-color: rgba(255, 255, 255, 0.5);
+}
+.mode.has-clip .disc::after {
+  content: "";
+  position: absolute;
+  right: 1px;
+  bottom: 1px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--ok);
+  border: 2px solid #000;
+}
+.mode[aria-selected="true"].has-clip .disc { border-color: var(--accent); }
+
+.mode.busy .disc {
+  border-color: var(--accent);
+  animation: pulse 900ms ease-in-out infinite;
+}
+.mode.failed .disc { border-color: var(--danger); opacity: 0.6; }
 
 /* El esqueleto ocupa exactamente lo mismo que el carrusel de verdad, así que
    al llegar los modos no salta nada: es la diferencia entre "está pensando" y

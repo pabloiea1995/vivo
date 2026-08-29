@@ -22,7 +22,7 @@
          clip para que el relevo foto→vídeo no parpadee, porque el primer
          fotograma del clip es literalmente esa foto. -->
     <video id="preview" playsinline autoplay muted></video>
-    <img id="shot" alt="">
+    <img id="shot" alt="" draggable="false">
     <video id="clip" playsinline loop></video>
 
     <div class="veil" id="veil" hidden>
@@ -30,6 +30,9 @@
       <p class="veil-label" id="veilLabel"></p>
       <p class="veil-hint" id="veilHint"></p>
     </div>
+
+    <!-- Arriba a la izquierda, lejos del pulgar: se consulta, no se usa. -->
+    <button class="round tl" id="peek" type="button" title="Ver el prompt" aria-label="Ver el prompt" hidden>ⓘ</button>
 
     <button class="round tr" id="flip" type="button" title="Cambiar de cámara" aria-label="Cambiar de cámara">⟲</button>
     <button class="round tr" id="mute" type="button" title="Sonido" aria-label="Sonido" hidden>🔇</button>
@@ -55,13 +58,13 @@
 
   <div class="carousel" id="carousel" role="listbox" aria-label="Modos de animación"></div>
 
+  <!-- Tres huecos fijos: lo que cambia es el disparador del centro, que dice
+       lo que va a hacer sobre el modo seleccionado. Cambiar DE modo ya no es un
+       botón — es deslizar. -->
   <div class="actions">
-    <div class="slot">
-      <button class="text" id="again" type="button" hidden>Otro modo</button>
-      <button class="text" id="reroll" type="button" hidden>🎲 Otras</button>
-    </div>
+    <div class="slot"><button class="text" id="fresh" type="button" hidden>Nueva foto</button></div>
     <button class="shutter" id="shutter" type="button" aria-label="Disparar"><span id="shutterCore" class="core"></span></button>
-    <div class="slot"><button class="text" id="peek" type="button" hidden>Prompt</button></div>
+    <div class="slot"><button class="text" id="reroll" type="button" hidden>🎲 Otras</button></div>
   </div>
 </footer>
 

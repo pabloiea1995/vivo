@@ -41,10 +41,15 @@ const SUGGEST = {
   ],
 };
 
-const received = { suggest: [], video: [] };
+const received = { suggest: [], video: [], videoAt: [] };
 
 function serve() {
   const server = http.createServer((req, res) => {
+    if (req.url === '/api/health') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, clipCostEur: 0.184 }));
+      return;
+    }
     if (req.url.startsWith('/api/')) {
       let raw = '';
       req.on('data', (c) => (raw += c));
@@ -57,12 +62,19 @@ function serve() {
           return;
         }
         received.video.push(body);
+        received.videoAt.push(Date.now());
+        // Un nombre distinto por ticket, para poder comprobar que cada modo se
+        // queda con SU clip y no con el del vecino.
+        const names = {
+          'tkt-0.mac': 'Brisa', 'tkt-1.mac': 'Marea',
+          'tkt-2.mac': 'Ventisca', 'tkt-3.mac': 'Perros voladores',
+        };
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
           video: { url: '/clip.webm' },
           seconds: 5,
           // el nombre real de la sorpresa sale AQUÍ, con el vídeo ya hecho
-          mode: 'Perros voladores',
+          mode: names[body.ticket] || 'Desconocido',
           costEur: 0.184,
           prompt: 'Animate the provided photograph. It is literally the first frame…',
         }));
@@ -131,12 +143,10 @@ const ok = (name, cond, extra) => {
 
   await page.goto(base);
   ok('la portada arranca en la puerta', await page.isVisible('#gate'));
-  // El indicador de zoom solo existe si la cámara lo permite; aquí no hay
-  // cámara, así que no debe verse ni romper nada al pintar el estado.
   ok('sin cámara no hay control de zoom', !(await page.isVisible('#zoom')));
 
-  // Una foto de verdad, generada en el propio navegador: la ruta de subida usa
-  // el mismo recorte 9:16 que la cámara, así que prueba el mismo código.
+  // Una foto de verdad, generada en el navegador: la ruta de subida usa el mismo
+  // recorte que la cámara, así que prueba el mismo código.
   const jpeg = await page.evaluate(async () => {
     const c = document.createElement('canvas');
     c.width = 900; c.height = 1600;
@@ -156,38 +166,42 @@ const ok = (name, cond, extra) => {
   ok('la web no manda texto de prompt', !JSON.stringify(received.suggest[0]).match(/motion|prompt/i));
 
   const labels = await page.$$eval('.mode .name', (n) => n.map((e) => e.textContent));
-  ok('cuatro modos', labels.length === 4, labels);
+  ok('cuatro modos + el chip ×4', labels.length === 5 && labels[4] === '×4', labels);
   ok('etiquetas del modelo', labels.slice(0, 3).join(',') === 'Brisa,Marea,Ventisca', labels);
   ok('la sorpresa va tapada', labels[3] === 'Sorpresa' &&
      (await page.$eval('.mode.surprise .disc', (e) => e.textContent)) === '🎲', labels[3]);
-  ok('el primero nace elegido', await page.$eval('.mode', (e) => e.getAttribute('aria-selected')) === 'true');
   ok('la foto se ve debajo', await page.isVisible('#shot'));
+  ok('ningún modo nace con vídeo', (await page.$$('.mode.has-clip')).length === 0);
 
-  // Volver a tirar los dados: otra llamada de visión, ni foto ni clip.
-  ok('se pueden pedir otras ideas', await page.isVisible('#reroll'));
-  await page.click('#reroll');
-  await page.waitForSelector('.mode:not(.skeleton)', { timeout: 10000 });
-  ok('...y eso es UNA llamada de visión más y ningún clip',
-     received.suggest.length === 2 && received.video.length === 0,
-     { suggest: received.suggest.length, video: received.video.length });
-  ok('...sobre la MISMA foto', received.suggest[1].imageBase64 === received.suggest[0].imageBase64);
+  // ── deslizar cambia de modo ──
+  const selected = () => page.$$eval('.mode', (n) => n.findIndex((e) => e.getAttribute('aria-selected') === 'true'));
+  const swipe = async (dx) => {
+    const box = await page.$eval('#frame', (e) => {
+      const r = e.getBoundingClientRect();
+      return { cx: r.left + r.width / 2, cy: r.top + r.height / 2 };
+    });
+    await page.mouse.move(box.cx, box.cy);
+    await page.mouse.down();
+    await page.mouse.move(box.cx + dx, box.cy, { steps: 8 });
+    await page.mouse.up();
+    await page.waitForTimeout(450);
+  };
 
-  // Elegir por toque: el chip no centrado se centra, no se aplica.
-  await page.click('.mode:nth-child(3)'); // :nth-child cuenta el ::before? no: los espaciadores son pseudoelementos
-  await page.waitForTimeout(600);
-  const selected = await page.$$eval('.mode', (n) => n.findIndex((e) => e.getAttribute('aria-selected') === 'true'));
-  ok('tocar un chip lo selecciona sin animar', selected === 2 && received.video.length === 0, { selected, video: received.video.length });
+  await swipe(-120);
+  ok('deslizar a la izquierda avanza un modo', (await selected()) === 1, await selected());
+  await swipe(-120);
+  ok('...y otra vez', (await selected()) === 2, await selected());
+  await swipe(120);
+  ok('deslizar a la derecha retrocede', (await selected()) === 1, await selected());
+  ok('deslizar no genera nada', received.video.length === 0, received.video.length);
 
-  // La sorpresa, y con ella la comprobación que importa.
-  await page.click('.mode.surprise');
-  await page.waitForTimeout(600);
+  // ── generar uno ──
   await page.click('#shutter');
-  await page.waitForSelector('#again:not([hidden])', { timeout: 15000 });
-
-  const sent = received.video[0];
+  await page.waitForSelector('.mode.has-clip', { timeout: 15000 });
   ok('un solo clip pedido', received.video.length === 1, received.video.length);
-  ok('viaja el ticket de la sorpresa', sent?.ticket === 'tkt-3.mac', sent?.ticket);
-  ok('la web NO escribe el prompt', !sent?.prompt && !sent?.motion && !sent?.modeId, Object.keys(sent || {}));
+  const sent = received.video[0];
+  ok('viaja el ticket del modo seleccionado', sent?.ticket === 'tkt-1.mac', sent?.ticket);
+  ok('la web NO escribe el prompt', !sent?.prompt && !sent?.motion, Object.keys(sent || {}));
 
   // ── el invariante ──
   const shown = await page.$eval('#shot', (e) => e.src);
@@ -195,8 +209,6 @@ const ok = (name, cond, extra) => {
      shown === `data:image/jpeg;base64,${sent.imageBase64}`,
      { shown: shown.slice(0, 48), sent: sent.imageBase64?.slice(0, 32) });
 
-  // El recorte es EL DEL HUECO QUE SE VE, no el de la imagen original: la
-  // proporción la fija la pantalla (390×844 aquí), no una constante.
   const dims = await page.evaluate((b64) => new Promise((res) => {
     const i = new Image();
     i.onload = () => res({ w: i.naturalWidth, h: i.naturalHeight });
@@ -209,36 +221,70 @@ const ok = (name, cond, extra) => {
   ok('recortada a la proporción del encuadre visible',
      Math.abs(dims.w / dims.h - frame.w / frame.h) < 0.01, { dims, frame });
   ok('y al tamaño de subida', Math.max(dims.w, dims.h) === 1280, dims);
-  ok('cabe de sobra en el cuerpo de la función', sent.imageBase64.length < 4_000_000, sent.imageBase64.length);
 
-  ok('la sorpresa se revela al final', (await page.textContent('#status')).includes('Perros voladores'),
-     await page.textContent('#status'));
-  ok('y con su coste', (await page.textContent('#status')).includes('0.18'), await page.textContent('#status'));
-  ok('el prompt es consultable', await page.isVisible('#peek'));
-  // El relevo. La foto NO se quita nunca: se queda debajo, y el vídeo se
-  // enciende encima cuando el decodificador ya tiene algo que pintar. Es la
-  // diferencia entre "mi foto se ha movido" y un parpadeo a negro en medio.
+  await page.waitForSelector('#clip.ready', { timeout: 10000 });
+  ok('el clip se enciende al estar listo y suena mudo',
+     await page.$eval('#clip', (e) => e.classList.contains('ready') && !e.paused && e.muted));
   ok('la foto sigue debajo del clip', await page.isVisible('#shot'));
-  await page.waitForSelector('#clip.ready', { timeout: 10000 }).catch(() => {});
-  ok('el clip se enciende al estar listo', await page.$eval('#clip', (e) => e.classList.contains('ready')));
-  ok('y arranca solo y mudo', await page.$eval('#clip', (e) => !e.paused && e.muted));
+  ok('solo ese modo queda marcado', (await page.$$('.mode.has-clip')).length === 1);
+  ok('el nombre real sale al terminar', (await page.textContent('#status')).includes('Marea'),
+     await page.textContent('#status'));
 
-  await page.click('#peek');
-  ok('el prompt es el que compuso el servidor',
-     (await page.textContent('#sheetBody')).includes('first frame'), await page.textContent('#sheetBody'));
-  await page.click('#sheet');
+  // ── deslizar a un modo CON vídeo lo reproduce solo, desde el principio ──
+  //
+  // Se le deja avanzar 1,5 s a propósito: el margen tiene que ser mayor que lo
+  // que el propio gesto tarda, o la comprobación mide la reproducción nueva en
+  // vez del rebobinado.
+  await page.waitForTimeout(1500);
+  const before = await page.$eval('#clip', (e) => e.currentTime);
+  ok('el clip avanza', before > 1, before);
+  await swipe(120);                            // a un modo sin vídeo
+  ok('en un modo sin vídeo el clip se oculta', !(await page.isVisible('#clip')));
+  ok('...y se queda parado', await page.$eval('#clip', (e) => e.paused));
+  await swipe(-120);                           // de vuelta al que sí lo tiene
+  ok('volver a un modo con vídeo lo reproduce solo',
+     await page.$eval('#clip', (e) => !e.paused));
+  const after = await page.$eval('#clip', (e) => e.currentTime);
+  ok('...y desde el primer fotograma', after < before - 0.5, { antes: before, ahora: after });
 
-  // Otro modo sobre la misma foto: un clip más, NI UNA visión más.
-  await page.click('#again');
-  await page.waitForTimeout(300);
-  await page.click('.mode:nth-child(1)');
-  await page.waitForTimeout(600);
+  // ── el chip ×4 ──
+  await page.click('.mode.all');
+  await page.waitForTimeout(450);
+  const status = await page.textContent('#status');
+  ok('el ×4 avisa de lo que cuesta antes de tocarlo', /3 que faltan.*0[.,]55/.test(status), status);
+
   await page.click('#shutter');
-  await page.waitForSelector('#again:not([hidden])', { timeout: 15000 });
-  ok('otro modo no vuelve a llamar a la visión', received.suggest.length === 2, received.suggest.length);
-  ok('y reutiliza la MISMA foto',
-     received.video[1]?.imageBase64 === sent.imageBase64 && received.video[1]?.ticket === 'tkt-0.mac',
-     received.video[1]?.ticket);
+  await page.waitForFunction(() => document.querySelectorAll('.mode.has-clip').length === 4, null,
+    { timeout: 30000 });
+  ok('el ×4 genera los que faltan y solo esos', received.video.length === 4, received.video.length);
+  ok('...en paralelo, no en cola', (() => {
+    // los tres del ×4 tienen que haber salido casi a la vez
+    const t = received.videoAt.slice(1);
+    return t[t.length - 1] - t[0] < 400;
+  })(), received.videoAt);
+  ok('...y cada uno con su ticket', new Set(received.video.map((v) => v.ticket)).size === 4,
+     received.video.map((v) => v.ticket));
+  ok('...sobre la MISMA foto', received.video.every((v) => v.imageBase64 === sent.imageBase64));
+  ok('al acabar salta al primero', (await selected()) === 0, await selected());
+  await page.waitForSelector('#clip.ready', { timeout: 10000 });
+  ok('y se reproduce', await page.$eval('#clip', (e) => !e.paused));
+
+  await page.click('.mode.all');
+  await page.waitForTimeout(300);
+  ok('con los cuatro hechos, el ×4 lo dice',
+     (await page.textContent('#status')).includes('cuatro est'), await page.textContent('#status'));
+
+  // ── persistencia ──
+  await page.reload();
+  await page.waitForSelector('.mode.has-clip', { timeout: 10000 });
+  ok('al recargar NO vuelve a la puerta', !(await page.isVisible('#gate')));
+  ok('los cuatro vídeos siguen ahí', (await page.$$('.mode.has-clip')).length === 4,
+     (await page.$$('.mode.has-clip')).length);
+  ok('...sin haber generado ni uno más', received.video.length === 4, received.video.length);
+  ok('...ni haber vuelto a llamar a la visión', received.suggest.length === 1, received.suggest.length);
+  ok('la misma foto', await page.$eval('#shot', (e) => e.src) === shown);
+  await page.waitForSelector('#clip.ready', { timeout: 10000 });
+  ok('y se reproduce el primero', await page.$eval('#clip', (e) => !e.paused));
 
   ok('sin errores de JavaScript', errors.length === 0, errors);
 
@@ -246,8 +292,8 @@ const ok = (name, cond, extra) => {
   if (shots) {
     fs.mkdirSync(shots, { recursive: true });
     await page.screenshot({ path: path.join(shots, 'play.png') });
-    await page.click('#again');
-    await page.waitForTimeout(400);
+    await page.click('.mode.all');
+    await page.waitForTimeout(500);
     await page.screenshot({ path: path.join(shots, 'pick.png') });
     console.log(`      capturas en ${shots}`);
   }

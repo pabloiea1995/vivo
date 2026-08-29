@@ -1,0 +1,22 @@
+{
+  "//": "En la raíz a propósito: es el que lee el compilador de Vercel al construir api/*.ts. La app de Expo tiene el suyo en app/.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "lib": [
+      "ES2022",
+      "DOM"
+    ],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "types": [
+      "node"
+    ]
+  },
+  "include": [
+    "api/**/*.ts"
+  ]
+}

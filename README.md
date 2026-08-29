@@ -59,20 +59,22 @@ cifras sin que nada fallase. `duration` y `resolution` se acotan contra la tabla
 
 ## Cómo se prueba
 
-```bash
-npm install
+El backend y la app se instalan por separado: no comparten dependencias y
+acoplarlos solo servía para que Vercel instalara Expo sin usarlo.
 
+```bash
 # 1. backend (necesita el CLI de Vercel y un .env con las claves)
+npm install
 cp .env.example .env      # y rellena OPENAI_API_KEY y FALAI_TOKEN
-npm run dev:api              # http://localhost:3000
+npm run dev:api           # http://localhost:3000
 
 # 2. app
-cd app && npx expo start  # y ábrela en el móvil con Expo Go
+cd app && npm install && npx expo start   # y ábrela en el móvil con Expo Go
 ```
 
 ```bash
-npm test        # sin claves ni red: los proveedores van simulados
-npm run typecheck
+npm test              # sin claves ni red: los proveedores van simulados
+npm run typecheck     # el backend; la app: cd app && npm run typecheck
 ```
 
 Las pruebas cubren los dos invariantes que un refactor distraído rompe sin que

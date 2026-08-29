@@ -7,7 +7,7 @@ import { readdirSync } from 'node:fs';
 
 const run = (cmd, args) => execFileSync(cmd, args, { stdio: 'inherit', cwd: new URL('..', import.meta.url) });
 
-run('npx', ['tsc', '-p', 'tsconfig.api.json', '--noEmit', 'false', '--outDir', '.tmp/build']);
+run('npx', ['tsc', '--noEmit', 'false', '--outDir', '.tmp/build']);
 
 const tests = readdirSync(new URL('../test', import.meta.url)).filter((f) => f.endsWith('.test.cjs')).sort();
 for (const file of tests) {

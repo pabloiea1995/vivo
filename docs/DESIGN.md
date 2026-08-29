@@ -64,7 +64,19 @@ la lista de lo que reinterpreta cuando se le deja.
 Lo que **sí** varía con el modo es la libertad del aire: la luz, el clima y (en
 `wild`) la física pueden hacer lo que quieran. No tienen cara.
 
-## 4. El dinero
+## 4. Por qué una web y no una app nativa
+
+Se empezó con Expo y se cambió a una página. Para un prototipo de esto, la web
+gana en las tres cosas que importan: se prueba abriendo una URL (sin Expo Go,
+sin build, sin TestFlight), se despliega en el mismo proyecto que la API —así
+que no hay CORS que configurar ni una base de API que mantener en dos sitios— y
+se puede verificar de punta a punta en un Chromium sin cámara.
+
+Lo que se paga por ello: la cámara del navegador exige HTTPS, no hay acceso al
+carrete ni al compartir nativo, y el vídeo se descarga en vez de guardarse. Para
+enseñar la idea no estorba ninguno de los tres.
+
+## 5. El dinero
 
 | | Coste | |
 |---|---|---|
@@ -90,13 +102,14 @@ distribuido la regala. Antes de enseñárselo a más de cinco personas hace falt
 que Ridio tiene en `api/_quota.ts`: un contador por llamante con presupuesto
 real.
 
-## 5. Lo que queda por validar
+## 6. Lo que queda por validar
 
-- **Relación de aspecto.** La app captura y manda 9:16 (es una cámara de móvil).
-  La ficha de H3 Max documenta los aspect ratios para *text-to-video*; en
-  *image-to-video* se asume que sale del fotograma de entrada, pero está sin
-  comprobar. Si fal devuelve el clip apaisado con bandas, la corrección es una
-  constante: `ASPECT` en `CameraScreen.tsx` a `16/9`.
+- **Relación de aspecto.** La página captura con la proporción del hueco
+  visible, que en un móvil ronda 9:19,5. La ficha de H3 Max documenta los aspect
+  ratios para *text-to-video*; en *image-to-video* se asume que sale del
+  fotograma de entrada, pero está sin comprobar. Si fal devuelve el clip
+  apaisado o con bandas, el arreglo es forzar una proporción fija en `grab`
+  (`public/app.js`) en vez de leerla de la pantalla.
 - **Latencia real de punta a punta.** La inferencia son ~3 s, pero falta medir la
   subida de la foto desde un móvil con mala cobertura y la cola de fal en hora
   punta. El texto "unos 10 segundos" de la pantalla de espera es una estimación,
@@ -106,3 +119,7 @@ real.
   el modo `wild`, hace falta un lote de pruebas antes de fiarse.
 - **Utilidad del modo `subtle` en el mundo real.** Es el que menos se ve y el que
   más barato sería quitar si nadie lo usa.
+- **La cámara en Safari de iOS.** `getUserMedia` se pide desde un gesto y sobre
+  HTTPS, que es lo que hace la portada, pero el comportamiento de
+  `facingMode: 'user'` y el reflejado del selfie solo están probados en
+  Chromium. Es lo primero que hay que mirar en un iPhone real.

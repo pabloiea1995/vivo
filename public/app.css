@@ -1,0 +1,352 @@
+/* La hoja de estilos de una cámara: casi todo es negro porque casi todo es la
+   foto. Lo único con color es el modo seleccionado — en una pantalla donde el
+   contenido lo pone la cámara, el color es lenguaje de interfaz, no adorno. */
+
+:root {
+  --bg: #000;
+  --text: #fff;
+  --dim: rgba(255, 255, 255, 0.62);
+  --accent: #ffd166;
+  --accent-ink: #1a1200;
+  --surprise: #c084fc;
+  --danger: #ff6b6b;
+  --hairline: rgba(255, 255, 255, 0.18);
+  --chrome: rgba(0, 0, 0, 0.55);
+  --chip: 64px;
+  --gap: 14px;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  /* Una cámara no se desplaza ni se hace zoom con dos dedos por accidente. */
+  overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* 100dvh y no 100vh: en móvil la barra del navegador aparece y desaparece, y
+   con vh el disparador se queda medio tapado justo al empezar a usarlo. */
+body {
+  position: relative;
+  height: 100dvh;
+}
+
+/* ─── El encuadre ────────────────────────────────────────────────────────── */
+
+/* La foto ocupa la pantalla entera y los mandos flotan encima. Es la gramática
+   de una cámara, y además es la más honesta que hay: el encuadre que se ve NO
+   está recortado por ninguna banda, así que "lo que ves es lo que se manda" es
+   literal de borde a borde. La proporción no la fija el CSS — la fija la
+   pantalla, y la captura la copia (ver `grab` en app.js). */
+.stage {
+  position: absolute;
+  inset: 0;
+}
+
+.frame {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #0a0a0a;
+}
+
+.frame > video,
+.frame > img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+#preview { z-index: 1; }
+#shot    { z-index: 2; }
+/* El clip vive ENCIMA de la foto y llega con opacidad 0. Se enciende cuando el
+   decodificador tiene algo que pintar; si no, hay un parpadeo a negro de un par
+   de décimas justo en el relevo, y ese parpadeo es lo único que separa "mi foto
+   se ha movido" de "me han hecho otro vídeo". */
+#clip {
+  z-index: 3;
+  opacity: 0;
+  transition: opacity 120ms linear;
+}
+#clip.ready { opacity: 1; }
+
+#preview[hidden], #shot[hidden], #clip[hidden] { display: none; }
+
+/* Selfie: se refleja el preview Y la captura, para que lo que sale sea lo que
+   se veía. La convención de cámara es no reflejar el archivo, pero aquí la
+   promesa es "el primer fotograma es tu foto", y tu foto es la que mirabas. */
+.mirrored { transform: scaleX(-1); }
+
+/* ─── Capas encima del encuadre ──────────────────────────────────────────── */
+
+.veil {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: rgba(0, 0, 0, 0.38);
+  backdrop-filter: blur(2px);
+}
+.veil[hidden] { display: none; }
+.veil-label { margin: 0; font-weight: 600; }
+.veil-hint { margin: 0; font-size: 12px; color: var(--dim); }
+
+.spinner {
+  width: 30px; height: 30px;
+  border: 2.5px solid rgba(255, 255, 255, 0.25);
+  border-top-color: var(--text);
+  border-radius: 50%;
+  animation: spin 720ms linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.round {
+  position: absolute;
+  z-index: 6;
+  width: 40px; height: 40px;
+  border: 0; border-radius: 50%;
+  background: var(--chrome);
+  color: var(--text);
+  font-size: 18px;
+  cursor: pointer;
+}
+.round.tr { top: max(14px, env(safe-area-inset-top)); right: 14px; }
+.round[hidden] { display: none; }
+#mute:not([hidden]) ~ #flip, #flip[hidden] { display: none; }
+
+.gate {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 32px;
+  text-align: center;
+  background: #0a0a0a;
+}
+.gate[hidden] { display: none; }
+.gate h1 { margin: 0; font-size: 30px; letter-spacing: -0.02em; }
+.gate p { margin: 0; color: var(--dim); }
+.gate-error { color: var(--danger) !important; font-size: 13px; }
+.gate-error[hidden] { display: none; }
+
+.primary {
+  margin-top: 10px;
+  padding: 13px 26px;
+  border: 0; border-radius: 24px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font: inherit; font-weight: 700;
+  cursor: pointer;
+}
+.link {
+  color: var(--dim);
+  font-size: 13px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* ─── Los mandos ─────────────────────────────────────────────────────────── */
+
+/* Los mandos flotan sobre la foto, con un degradado que les da contraste sin
+   tapar nada: un fondo opaco recortaría el encuadre, que es justo lo que este
+   diseño evita. */
+.chrome {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+  background: linear-gradient(
+    to top,
+    rgba(0, 0, 0, 0.8) 0%,
+    rgba(0, 0, 0, 0.55) 58%,
+    rgba(0, 0, 0, 0) 100%
+  );
+  pointer-events: none;
+}
+.chrome > * { pointer-events: auto; }
+
+.status {
+  min-height: 20px;
+  margin: 0 0 10px;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+  padding: 0 24px;
+  text-align: center;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.85);
+}
+.status.error { color: var(--danger); }
+
+/* El carrusel: filtros de Instagram. El chip del CENTRO es el elegido — no hay
+   marca de "activo" en ningún otro sitio, porque el centro ya lo dice.
+
+   Los dos espaciadores son lo que cuesta y lo que se nota: sin ellos el primer
+   y el último modo no pueden llegar al centro, y el primero (el más sutil, el
+   que más se usa) sería el único imposible de seleccionar deslizando. */
+.carousel {
+  display: flex;
+  gap: var(--gap);
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  padding: 2px 0 4px;
+}
+.carousel::-webkit-scrollbar { display: none; }
+.carousel::before,
+.carousel::after {
+  content: "";
+  flex: none;
+  /* menos el gap, que ya separa el espaciador del primer chip */
+  width: calc(50% - var(--chip) / 2 - var(--gap));
+}
+
+.mode {
+  flex: none;
+  width: var(--chip);
+  scroll-snap-align: center;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--dim);
+  font: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.mode .disc {
+  width: var(--chip); height: var(--chip);
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--hairline);
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(6px);
+  font-size: 26px;
+  transition: border-color 140ms, transform 140ms;
+}
+.mode .name {
+  display: block;
+  margin-top: 6px;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mode[aria-selected="true"] { color: var(--text); }
+.mode[aria-selected="true"] .disc {
+  border: 2.5px solid var(--accent);
+  transform: scale(1.06);
+}
+.mode.surprise[aria-selected="true"] .disc { border-color: var(--surprise); }
+.mode.busy .disc { opacity: 0.45; }
+.carousel.locked .mode { pointer-events: none; }
+
+/* El esqueleto ocupa exactamente lo mismo que el carrusel de verdad, así que
+   al llegar los modos no salta nada: es la diferencia entre "está pensando" y
+   "se ha roto y luego se ha arreglado". */
+.mode.skeleton .disc { animation: pulse 1240ms ease-in-out infinite; }
+.mode.skeleton .name::after {
+  content: "";
+  display: block;
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.16);
+  animation: pulse 1240ms ease-in-out infinite;
+}
+@keyframes pulse { 0%, 100% { opacity: 0.35 } 50% { opacity: 0.8 } }
+
+.hint {
+  min-height: calc(var(--chip) + 23px);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--dim);
+  font-size: 13px;
+  text-align: center;
+  padding: 0 32px;
+}
+
+/* Un botón, en el mismo sitio siempre, que cambia de significado según dónde
+   estés: dispara, aplica o vuelve. En una cámara el pulgar no debería tener que
+   buscar, y un segundo botón primario en la misma fila obliga a leer antes de
+   tocar. */
+.actions {
+  display: flex;
+  align-items: center;
+  padding-top: 16px;
+}
+.slot { flex: 1; display: flex; justify-content: center; }
+.text {
+  background: none; border: 0;
+  color: var(--text); font: inherit; font-weight: 600;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+  cursor: pointer;
+}
+.text[hidden] { display: none; }
+
+.shutter {
+  flex: none;
+  width: 76px; height: 76px;
+  padding: 0;
+  border: 3px solid rgba(255, 255, 255, 0.9);
+  border-radius: 50%;
+  background: none;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.shutter:active:not(:disabled) { transform: scale(0.94); }
+.shutter:disabled { opacity: 0.5; cursor: default; }
+.core {
+  width: 62px; height: 62px;
+  border-radius: 50%;
+  background: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px; font-weight: 700;
+  color: var(--accent-ink);
+  transition: background-color 140ms;
+}
+.core.apply { background: var(--accent); }
+.core.again { background: rgba(255, 255, 255, 0.18); color: var(--text); }
+
+/* ─── Lo que se le pidió al modelo ───────────────────────────────────────── */
+/* En un producto esto no se enseña; en un prototipo es media herramienta,
+   porque es justo lo que se está afinando. */
+.sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  padding: max(32px, env(safe-area-inset-top)) 22px 32px;
+  background: rgba(0, 0, 0, 0.94);
+  overflow-y: auto;
+}
+.sheet[hidden] { display: none; }
+.sheet h2 { margin: 0 0 12px; font-size: 16px; color: var(--accent); }
+.sheet pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font: 13px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--dim);
+}
+.sheet-close { margin-top: 24px; text-align: center; font-size: 12px; color: var(--dim); }

@@ -1,24 +1,70 @@
 <!doctype html>
+<html lang="es">
+<head>
 <meta charset="utf-8">
-<title>Vivo — API</title>
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<style>
-  :root { color-scheme: dark }
-  body { background:#000; color:#eee; font:15px/1.6 ui-sans-serif,system-ui,sans-serif;
-         margin:0; padding:48px 24px; display:flex; justify-content:center }
-  main { max-width:34rem }
-  h1 { font-size:1.6rem; margin:0 0 .2em }
-  p { color:#9a9a9a }
-  code { background:#181818; padding:.15em .4em; border-radius:4px; color:#ffd166 }
-  a { color:#ffd166 }
-</style>
-<main>
-  <h1>Vivo</h1>
-  <p>Backend del prototipo. La interfaz es la app de Expo (<code>app/</code>);
-     aquí solo viven las tres funciones.</p>
-  <p>
-    <code>POST /api/suggest</code> — la foto entra, cuatro modos salen.<br>
-    <code>POST /api/video</code> — el clip, empezando por la foto.<br>
-    <code>GET <a href="/api/health">/api/health</a></code> — qué claves ve el servidor.
-  </p>
+<title>Vivo</title>
+<!-- viewport-fit=cover + safe-area en el CSS: en un iPhone la barra de gestos
+     se come justo la fila del disparador si no se declara. -->
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#000000">
+<meta name="description" content="Haz una foto y mírala moverse.">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🎞️</text></svg>">
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+
+<main class="stage">
+  <div class="frame" id="frame">
+    <!-- Las tres capas del encuadre, siempre en el mismo sitio y en este orden.
+         Nunca se destruyen ni se recrean: la foto tiene que seguir DEBAJO del
+         clip para que el relevo foto→vídeo no parpadee, porque el primer
+         fotograma del clip es literalmente esa foto. -->
+    <video id="preview" playsinline autoplay muted></video>
+    <img id="shot" alt="">
+    <video id="clip" playsinline loop></video>
+
+    <div class="veil" id="veil" hidden>
+      <div class="spinner"></div>
+      <p class="veil-label" id="veilLabel"></p>
+      <p class="veil-hint" id="veilHint"></p>
+    </div>
+
+    <button class="round tr" id="flip" type="button" title="Cambiar de cámara" aria-label="Cambiar de cámara">⟲</button>
+    <button class="round tr" id="mute" type="button" title="Sonido" aria-label="Sonido" hidden>🔇</button>
+
+    <!-- La puerta de entrada. getUserMedia necesita un gesto del usuario en
+         Safari, así que el permiso se pide desde aquí y no al cargar. -->
+    <div class="gate" id="gate">
+      <h1>Vivo</h1>
+      <p>Haz una foto y mírala moverse.</p>
+      <button class="primary" id="start" type="button">Activar cámara</button>
+      <label class="link" for="upload">o sube una foto</label>
+      <input id="upload" type="file" accept="image/*" hidden>
+      <p class="gate-error" id="gateError" hidden></p>
+    </div>
+  </div>
 </main>
+
+<footer class="chrome">
+  <p class="status" id="status"></p>
+
+  <div class="carousel" id="carousel" role="listbox" aria-label="Modos de animación"></div>
+
+  <div class="actions">
+    <div class="slot"><button class="text" id="again" type="button" hidden>Otro modo</button></div>
+    <button class="shutter" id="shutter" type="button" aria-label="Disparar"><span id="shutterCore" class="core"></span></button>
+    <div class="slot"><button class="text" id="peek" type="button" hidden>Prompt</button></div>
+  </div>
+</footer>
+
+<div class="sheet" id="sheet" hidden>
+  <h2 id="sheetTitle"></h2>
+  <pre id="sheetBody"></pre>
+  <p class="sheet-close">Toca para cerrar</p>
+</div>
+
+<script type="module" src="/app.js"></script>
+</body>
+</html>

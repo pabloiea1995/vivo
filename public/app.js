@@ -123,8 +123,9 @@ const animate = (base64, mode) =>
 async function openCamera() {
   stopCamera();
   S.stream = await navigator.mediaDevices.getUserMedia({
-    // El encuadre de la app es 9:16; se pide vertical para que el navegador no
-    // entregue un 16:9 apaisado del que habría que tirar la mitad.
+    // Se pide vertical: en un móvil el encuadre es alto, y con la petición por
+    // defecto el navegador entrega un 16:9 apaisado del que habría que tirar
+    // más de la mitad al recortar.
     video: { facingMode: S.facing, width: { ideal: 1080 }, height: { ideal: 1920 } },
     audio: false,
   });

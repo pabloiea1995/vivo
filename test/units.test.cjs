@@ -78,6 +78,9 @@ function syncChecks() {
 const p = buildVideoPrompt({ motion: 'The dog blinks.', intensity: 'subtle' });
 ok('prompt names the first frame', /first frame/i.test(p), p.slice(0, 80));
 ok('prompt forbids speech', /no speech/i.test(p));
+ok('wild deja oír el evento', /let the event be heard/i.test(buildVideoPrompt({ motion: 'm', intensity: 'wild' })));
+ok('...pero sigue sin voz', /no speech/i.test(buildVideoPrompt({ motion: 'm', intensity: 'wild' })));
+ok('subtle mantiene el ambiente quieto', /nothing more/i.test(p));
 ok('prompt guards identity', /keeps its exact appearance/i.test(p));
 ok('subtle pins the camera', /camera does not move/i.test(p));
 

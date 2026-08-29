@@ -92,13 +92,23 @@ const LICENCE: Record<Intensity, string> = {
     'Go all in on the event described above. New elements MAY enter the frame and the environment MAY transform, dramatically and impossibly: craft, creatures, portals, fire, flood, impossible light, a shift of scale or of genre. Physics is optional. The event should be unmistakable within the first two seconds — a viewer must not have to squint to find it.',
 };
 
-// H3 Max genera audio en la misma pasada, así que o se dirige o se sufre. Sin
-// voz: una voz inventada sobre la cara de alguien real es un deepfake por
-// accidente, y encima nunca hablaría su idioma.
-const AUDIO_DIRECTION = [
-  'Audio: quiet, diegetic ambience that matches the setting.',
-  'Absolutely no speech, no dialogue, no narration, no singing and no music with lyrics.',
-].join(' ');
+// H3 Max genera audio en la misma pasada, así que o se dirige o se sufre. Y
+// escala con la intensidad por el mismo motivo que la imagen: pedir "ambiente
+// tranquilo" mientras baja una nave nodriza es contradecirse, y el modelo
+// resuelve las contradicciones como le parece.
+//
+// Lo que NO escala es la voz. Una voz inventada sobre la cara de alguien real
+// es un deepfake por accidente, y encima nunca hablaría su idioma.
+const AUDIO: Record<Intensity, string> = {
+  subtle: 'Audio: quiet, diegetic ambience that matches the setting, nothing more.',
+  cinematic:
+    'Audio: diegetic ambience that matches the setting and follows the weather and the light as they change.',
+  wild:
+    'Audio: let the event be heard — rumble, roar, wind, impact, whatever it is — over the ambience of the place, without drowning it.',
+};
+
+const NO_SPEECH =
+  'Absolutely no speech, no dialogue, no narration, no singing and no music with lyrics.';
 
 const clip = (s: string, max: number): string => {
   const t = (s || '').replace(/\s+/g, ' ').trim();
@@ -121,7 +131,8 @@ export function buildVideoPrompt(inputs: VideoPromptInputs): string {
     LICENCE[intensity],
     CAMERA[intensity],
     PHOTO_GUARD,
-    AUDIO_DIRECTION,
+    AUDIO[intensity],
+    NO_SPEECH,
   ].join(' ');
 }
 
@@ -131,10 +142,10 @@ export function describeVideoPrompts(): Array<{ id: string; text: string }> {
     { id: 'firstFrame', text: FIRST_FRAME_GUARD },
     { id: 'identity', text: IDENTITY_GUARD },
     { id: 'photo', text: PHOTO_GUARD },
-    { id: 'audio', text: AUDIO_DIRECTION },
+    { id: 'noSpeech', text: NO_SPEECH },
     ...(['subtle', 'cinematic', 'wild'] as Intensity[]).map((i) => ({
-      id: `camera:${i}`,
-      text: `${LICENCE[i]} ${CAMERA[i]}`,
+      id: `intensity:${i}`,
+      text: `${LICENCE[i]} ${CAMERA[i]} ${AUDIO[i]}`,
     })),
   ];
 }

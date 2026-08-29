@@ -87,6 +87,24 @@ Son cuatro clips, ~0,74 € de una vez. La cifra la da el servidor en
 `/api/health` y no una constante del cliente, porque la tarifa de fal cambia el
 1 de septiembre.
 
+## 0 quater. Dos trampas de `vercel.json`
+
+Van aquí porque el fichero no las puede documentar solo, y esa es justo la
+primera:
+
+**`vercel.json` no admite comentarios, ni siquiera el truco de la clave `"//"`.**
+Vercel lo valida contra un esquema estricto y una propiedad que no conozca tumba
+el build entero con `should NOT have additional property '//'`. Se aprendió
+rompiendo el primer despliegue desde Git con un comentario que explicaba por qué
+la línea siguiente era necesaria. Otros JSON del repo (`tsconfig.json`,
+`api/package.json`) sí llevan esa clave y no pasa nada: nadie los valida así.
+
+**`"framework": null` está a propósito.** Los despliegues anteriores se hacían
+subiendo ficheros, con los ajustes pasados por fuera. Conectado a Git, Vercel
+autodetecta el framework, y aquí no hay ninguno — solo estáticos y funciones.
+Declararlo evita que el primer despliegue desde el repo salga distinto al que ya
+funcionaba.
+
 ## 1. Por qué la visión propone y no elige
 
 Lo obvio sería que GPT mirase la foto y devolviera *el* mejor vídeo. Se descartó

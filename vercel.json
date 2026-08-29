@@ -1,6 +1,5 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "//": "framework: null a propósito. Los despliegues de este proyecto se hicieron subiendo ficheros, con los ajustes pasados por fuera; conectado a Git, Vercel intenta AUTODETECTAR el framework y aquí no hay ninguno — solo estáticos y funciones. Declararlo evita que el primer despliegue desde el repo se comporte distinto al que ya funciona.",
   "framework": null,
   "outputDirectory": "public",
   "functions": {

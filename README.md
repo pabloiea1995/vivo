@@ -9,13 +9,12 @@ GPT mira lo que acabas de fotografiar y propone cuatro formas de animarlo —tre
 pensadas para *esa* foto y una sorpresa—. Eliges una en un carrusel de filtros y
 el modelo de vídeo genera cinco segundos que **empiezan exactamente en tu foto**.
 
-**En marcha:** https://vivo-two.vercel.app
-
-> ⚠️ **Este repositorio es público y anuncia la URL del despliegue.** Sin
-> `VIVO_APP_SECRET` puesta, `/api/video` es un grifo de dinero con dirección
-> conocida: cualquiera que lea esto puede pedir clips a ~0,18 € cada uno con
-> nuestra clave de fal. Compruébalo en `/api/health` — tiene que decir
-> `"appSecret": true`.
+> 🎥 **Verlo funcionando:**
+> [el hilo en X](https://x.com/pablosanchezmv/status/2093753224847040813)
+> tiene el vídeo de la app en marcha.
+>
+> No hay despliegue público: era un experimento y el proyecto de Vercel está
+> parado. Para probarlo hay que levantarlo, y abajo está cómo.
 
 Prototipo. Una página, tres funciones serverless, ningún registro, ninguna base
 de datos, ningún paso de compilación.
@@ -25,6 +24,25 @@ de datos, ningún paso de compilación.
                 (gpt-5.6-luna)        │                (H3 Max i2v)
                                       └── deslizas entre ellos como un carrete
 ```
+
+## La idea
+
+Un modelo de vídeo *image-to-video* es una máquina rarísima: le das una foto y
+un párrafo de instrucciones y te devuelve cinco segundos que arrancan en esa
+foto. Lo difícil no es la máquina, es el párrafo. Nadie que acaba de sacar el
+móvil quiere escribir *"cinematic dolly-in, volumetric light, the subject turns
+slowly"*, y si le pones una caja de texto delante lo que consigues es que se
+vaya.
+
+Vivo quita la caja de texto. Quien escribe el párrafo es GPT, que además ha
+visto la foto: sabe si hay una persona, un plato de comida, un tejado o el mar,
+y propone cuatro cosas que le podrían pasar *a eso*. Tú solo eliges, y eliges
+como se elige un filtro de Instagram — deslizando por un carrusel abajo, sin
+salir del encuadre.
+
+Lo que queda es un gesto de dos pasos, foto y desliz, con un momento bueno al
+final: la imagen que estabas mirando empieza a moverse sin cortar. Ese "sin
+cortar" es la app entera, y de ahí sale la decisión que ordena todo lo demás.
 
 ## La decisión que ordena todo lo demás
 
@@ -108,49 +126,45 @@ resolución, no por generación: un clip de 5 s a 768p cuesta lo que trece
 ilustraciones, y un `duration: 900` colado en el cuerpo sería una factura de tres
 cifras sin que nada fallase. `duration` y `resolution` se acotan contra la tabla.
 
-## Cómo se prueba
+## Montarlo en local
+
+Hace falta Node 18 o más nuevo y una cuenta en OpenAI y en [fal.ai](https://fal.ai).
 
 ```bash
+git clone https://github.com/pabloiea1995/vivo.git
+cd vivo
 npm install
-cp .env.example .env      # y rellena OPENAI_API_KEY y FALAI_TOKEN
-npm run dev:api           # necesita el CLI de Vercel
-# abre http://localhost:3000
+npm i -g vercel            # las funciones de api/ las sirve el CLI de Vercel
+
+cp .env.example .env       # y rellena al menos FALAI_TOKEN
+npm run dev:api            # http://localhost:3000
 ```
 
-La página y la API viven en el mismo origen, así que no hay nada que configurar
-en el cliente. **La cámara solo funciona sobre HTTPS o en `localhost`**: es una
-regla del navegador, no del prototipo. En el despliegue de Vercel funciona.
+`vercel dev` sirve la página estática de `public/` y las funciones de `api/` en
+el mismo origen, así que **el cliente no necesita configurar nada**: no hay URL
+de API que apuntar ni CORS que abrir. `.env` está en `.gitignore` y ninguna de
+esas claves llega al navegador.
 
-Con la cerradura puesta en el servidor, se le pasa a la página una vez por la
-URL y se queda recordada:
-
-```
-https://vivo-two.vercel.app/?key=<VIVO_APP_SECRET>
-```
-
-### Lo que falta para que funcione de verdad
-
-Las claves no están en el repositorio ni pueden estarlo. En **Vercel → vivo →
-Settings → Environment Variables** (Production) hacen falta tres, y luego un
-redespliegue:
+De las variables de `.env.example`, solo una es imprescindible:
 
 | Variable | Sin ella |
 |---|---|
-| `FALAI_TOKEN` | `/api/video` responde 500: no hay clip. |
-| `OPENAI_API_KEY` | El carrusel sale genérico (catálogo) y no hay moderación. |
-| `VIVO_APP_SECRET` | **`/api/video` queda abierto a quien encuentre la URL**, y cada llamada cuesta ~0,18 €. Ponla a la vez que las otras dos. |
+| `FALAI_TOKEN` | **Requerida.** `/api/video` responde 500: no hay clip. |
+| `OPENAI_API_KEY` | La app funciona, pero el carrusel sale con el catálogo fijo en vez de modos a medida, y no hay moderación. |
+| `VIVO_TICKET_SECRET` | Recomendada en producción, irrelevante en local: sin ella cada función serverless firma con un secreto efímero propio y los tickets no cruzan de una a otra ("Ese modo ha caducado"). En `vercel dev` es un solo proceso, así que no se nota. |
+| `VIVO_APP_SECRET` | En local, ninguna: sin ella el backend queda abierto, y en `localhost` eso es lo cómodo. En un despliegue público es otra cosa — ver abajo. |
 
-`VIVO_TICKET_SECRET` es opcional de verdad: si no está, la clave de firma de los
-tickets se deriva de `FALAI_TOKEN`, que sin ella no habría vídeo que animar de
-todas formas. Ponerla solo hace falta si algún día se rotan las claves de
-proveedor sin querer invalidar los tickets en vuelo.
+Las opcionales (modelo de visión, temperatura, tiempos de espera, tarifa de fal)
+están comentadas en `.env.example` con lo que hace cada una.
 
-`GET /api/health` dice cuáles ve el servidor sin revelar ninguna.
+**La cámara solo funciona sobre HTTPS o en `localhost`**: es una regla del
+navegador, no del prototipo. En `localhost` va; si abres el `dev` desde el móvil
+por la IP de la red, no — usa el botón "o sube una foto", o despliega.
 
-Verificación:
+### Comprobar que va
 
 ```bash
-npm test              # sin claves ni red: los proveedores van simulados
+npm test              # sin claves y sin red: los proveedores van simulados
 npm run typecheck
 npm i -D playwright   # opcional: activa la prueba de navegador (si no, se salta)
 ```
@@ -161,8 +175,55 @@ falle en pantalla: que el cuerpo que llega a fal lleva **la foto** como
 foto que se está viendo, y que un `motion` metido a mano en la petición **no
 llega a ningún sitio**.
 
-`GET /api/health` dice qué claves ve el servidor (nunca sus valores) y
-`?prompts=1` enseña los prompts compuestos sin provocar ninguna generación.
+`GET /api/health` dice qué claves ve el servidor (nunca sus valores), qué modelo
+de visión usará y cuánto cuesta un clip; `?prompts=1` enseña los prompts
+compuestos sin provocar ninguna generación.
+
+## Desplegarlo en Vercel
+
+No hay paso de compilación: `vercel.json` sirve `public/` tal cual y compila las
+funciones de `api/*.ts`. Con el repositorio importado en Vercel, cada push a
+`main` despliega.
+
+```bash
+vercel link           # o importa el repo desde vercel.com/new
+vercel --prod
+```
+
+Después, en **Settings → Environment Variables** (entorno *Production*), las
+tres que importan, y **un redespliegue** para que las cojan:
+
+| Variable | Sin ella |
+|---|---|
+| `FALAI_TOKEN` | `/api/video` responde 500: no hay clip. |
+| `OPENAI_API_KEY` | El carrusel sale genérico (catálogo) y no hay moderación. |
+| `VIVO_APP_SECRET` | **`/api/video` queda abierto a quien encuentre la URL**, y cada llamada cuesta ~0,18 € de tu cuenta de fal. Ponla a la vez que las otras dos. |
+
+> ⚠️ **Si lo despliegas desde un repositorio público, `VIVO_APP_SECRET` no es
+> opcional.** Una URL de Vercel es adivinable y el código que explica cómo
+> llamar a `/api/video` está aquí a la vista: sin cerradura es un grifo de
+> dinero con dirección conocida. Genera una cadena larga al azar
+> (`openssl rand -base64 24`), **no la escribas en ningún archivo del repo**, y
+> confirma en `/api/health` que responde `"appSecret": true`.
+
+Con la cerradura puesta, a la página se le pasa una vez por la URL y el
+navegador la recuerda:
+
+```
+https://<tu-despliegue>.vercel.app/?key=<VIVO_APP_SECRET>
+```
+
+`VIVO_TICKET_SECRET` es opcional de verdad: si no está, la clave de firma de los
+tickets se deriva de `FALAI_TOKEN`, que sin ella no habría vídeo que animar de
+todas formas. Ponerla solo hace falta si algún día se rotan las claves de
+proveedor sin querer invalidar los tickets en vuelo.
+
+### Lo que cuesta
+
+Un clip de 5 s a 768P son ~0,18 €; una tirada de modos, ~0,0015 €; el chip `×4`,
+cuatro clips de golpe. No hay cuentas, ni cuotas, ni límite por usuario: **quien
+despliega paga todo lo que se genere**, así que si lo dejas abierto al público,
+ponle antes un tope de gasto en fal.
 
 ## Qué hay dentro
 

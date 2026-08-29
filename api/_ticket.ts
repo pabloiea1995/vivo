@@ -59,24 +59,56 @@ const fromB64url = (s: string): Uint8Array<ArrayBuffer> => {
   return out;
 };
 
-// Sin secreto configurado se genera uno al arrancar la función. Es SUFICIENTE
-// para lo que el ticket protege (que el cliente no escriba el prompt) y falla
-// del lado seguro: cada instancia serverless firma con el suyo, así que un
-// ticket emitido por otra simplemente no verifica y el cliente ve "ese modo ha
-// caducado". En un despliegue serio se pone `VIVO_TICKET_SECRET`.
+// De dónde sale la clave de firma, y por qué esto es más importante de lo que
+// parece.
+//
+// La primera versión generaba un secreto aleatorio por proceso cuando
+// `VIVO_TICKET_SECRET` no estaba puesta, con el argumento de que "falla del
+// lado seguro". Era falso, y de la peor manera: `/api/suggest` y `/api/video`
+// son DOS funciones serverless distintas, así que NUNCA comparten proceso. El
+// ticket que firmaba una jamás verificaba en la otra, y el usuario veía "ese
+// modo ha caducado" en absolutamente todos los intentos. Un respaldo que falla
+// siempre no es un respaldo, es una bomba de relojería con documentación.
+//
+// Ahora la clave se DERIVA (HKDF) de un secreto que ya existe en el entorno y
+// es el mismo para todas las funciones del despliegue. El orden es de más
+// específico a más disponible; `FALAI_TOKEN` sirve de ancla porque sin ella no
+// hay vídeo que animar, así que si el prototipo funciona, existe.
+//
+// Derivar y no usar el secreto tal cual: así la clave de firma no ES la clave
+// del proveedor, y el `info` distinto garantiza que no colisiona con ningún
+// otro uso.
 let keyPromise: Promise<CryptoKey> | null = null;
+
+function seed(): Uint8Array<ArrayBuffer> {
+  const configured = process.env.VIVO_TICKET_SECRET;
+  if (configured && configured.length >= 16) return enc.encode(configured);
+  const anchor = process.env.FALAI_TOKEN || process.env.FAL_KEY || process.env.OPENAI_API_KEY;
+  if (anchor) return enc.encode(anchor);
+  // Sin ninguna clave configurada el prototipo no puede generar nada de todas
+  // formas, así que aquí ya no hay nada que romper.
+  console.warn('[ticket] sin secreto ni clave de proveedor: los tickets no cruzarán funciones');
+  return crypto.getRandomValues(new Uint8Array(32));
+}
 
 function hmacKey(): Promise<CryptoKey> {
   if (keyPromise) return keyPromise;
-  const configured = process.env.VIVO_TICKET_SECRET;
-  const raw =
-    configured && configured.length >= 16
-      ? enc.encode(configured)
-      : crypto.getRandomValues(new Uint8Array(32));
-  keyPromise = crypto.subtle.importKey('raw', raw, { name: 'HMAC', hash: 'SHA-256' }, false, [
-    'sign',
-    'verify',
-  ]);
+  keyPromise = crypto.subtle
+    .importKey('raw', seed(), 'HKDF', false, ['deriveKey'])
+    .then((material) =>
+      crypto.subtle.deriveKey(
+        {
+          name: 'HKDF',
+          hash: 'SHA-256',
+          salt: enc.encode('vivo.ticket.v1'),
+          info: enc.encode('mode-ticket'),
+        },
+        material,
+        { name: 'HMAC', hash: 'SHA-256' },
+        false,
+        ['sign', 'verify']
+      )
+    );
   return keyPromise;
 }
 

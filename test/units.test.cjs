@@ -27,6 +27,50 @@ ok('ticket rejects garbage',
    (await verifyTicket('nope')) === null && (await verifyTicket(null)) === null && (await verifyTicket(123)) === null);
 ok('ticket rejects bad intensity',
    (await verifyTicket(await signTicket({ motion: 'm', intensity: 'nope', label: 'l' }))) === null);
+
+// La regresión que costó un despliegue: /api/suggest y /api/video son DOS
+// funciones serverless, así que nunca comparten proceso. Se simula recargando
+// el módulo — si la clave no se deriva de algo estable del entorno, el ticket
+// firmado por la primera instancia no verifica en la segunda y el usuario ve
+// "ese modo ha caducado" en todos los intentos.
+async function crossInstance(env, expectValid) {
+  const before = { ...process.env };
+  Object.assign(process.env, env);
+  const path = require.resolve(BUILD + '_ticket');
+
+  delete require.cache[path];
+  const a = require(BUILD + '_ticket');
+  const ticket = await a.signTicket({ motion: 'rain', intensity: 'wild', label: 'L' });
+
+  delete require.cache[path];
+  const b = require(BUILD + '_ticket');
+  const seen = await b.verifyTicket(ticket);
+
+  delete require.cache[path];
+  process.env = before;
+  return !!seen === expectValid;
+}
+
+ok('un ticket cruza de una función a otra con VIVO_TICKET_SECRET',
+   await crossInstance({ VIVO_TICKET_SECRET: 'un-secreto-bastante-largo', FALAI_TOKEN: '', OPENAI_API_KEY: '' }, true));
+ok('...y también solo con la clave de fal, que es la que siempre está',
+   await crossInstance({ VIVO_TICKET_SECRET: '', FALAI_TOKEN: 'fal-abc123', OPENAI_API_KEY: '' }, true));
+ok('...y con la de OpenAI si no hay otra',
+   await crossInstance({ VIVO_TICKET_SECRET: '', FALAI_TOKEN: '', FAL_KEY: '', OPENAI_API_KEY: 'sk-abc' }, true));
+ok('dos despliegues con secretos distintos NO se entienden',
+   await (async () => {
+     const before = { ...process.env };
+     const path = require.resolve(BUILD + '_ticket');
+     process.env.VIVO_TICKET_SECRET = 'secreto-numero-uno-largo';
+     delete require.cache[path];
+     const t = await require(BUILD + '_ticket').signTicket({ motion: 'm', intensity: 'wild', label: 'L' });
+     process.env.VIVO_TICKET_SECRET = 'secreto-numero-dos-largo';
+     delete require.cache[path];
+     const seen = await require(BUILD + '_ticket').verifyTicket(t);
+     delete require.cache[path];
+     process.env = before;
+     return seen === null;
+   })());
 }
 
 // --- prompts ---
@@ -34,9 +78,19 @@ function syncChecks() {
 const p = buildVideoPrompt({ motion: 'The dog blinks.', intensity: 'subtle' });
 ok('prompt names the first frame', /first frame/i.test(p), p.slice(0, 80));
 ok('prompt forbids speech', /no speech/i.test(p));
-ok('prompt guards identity', /same person/i.test(p));
+ok('prompt guards identity', /keeps its exact appearance/i.test(p));
 ok('subtle pins the camera', /camera does not move/i.test(p));
-ok('wild loosens physics', /impossibly/i.test(buildVideoPrompt({ motion: 'm', intensity: 'wild' })));
+
+// La línea que separa las dos guardas, y que hace posible medio catálogo: la
+// identidad no se toca NUNCA, pero lo que puede aparecer sí escala.
+const wild = buildVideoPrompt({ motion: 'a mothership arrives', intensity: 'wild' });
+ok('subtle no deja entrar nada nuevo', /Nothing new enters the frame/i.test(p));
+ok('wild SÍ deja entrar cosas nuevas', /New elements MAY enter/i.test(wild), wild.slice(0, 80));
+ok('wild afloja la física', /Physics is optional/i.test(wild));
+ok('...pero la identidad se guarda igual en wild', /keeps its exact appearance/i.test(wild));
+ok('...y el encuadre tambien', /stays one continuous shot/i.test(wild));
+ok('cinematic solo trae lo que cae del cielo',
+   /belong to the sky/i.test(buildVideoPrompt({ motion: 'm', intensity: 'cinematic' })));
 let threw = false; try { buildVideoPrompt({ motion: '  ', intensity: 'subtle' }); } catch { threw = true; }
 ok('empty motion throws', threw);
 

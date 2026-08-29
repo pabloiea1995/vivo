@@ -3,6 +3,34 @@
 Lo que se decidió y por qué, para no volver a discutirlo dentro de tres semanas.
 Escrito el 29-08-2026.
 
+## 0. Espectáculo, no contención
+
+El primer catálogo era todo sutileza —brisa, respiración, la luz cambiando— y
+estaba mal. Venía tal cual de Ridio, donde el vídeo ilustra una novela y lo que
+se pide es que la ilustración no se reinterprete. Aquí el contexto es el
+opuesto: alguien saca el móvil, hace una foto y espera diez segundos. Devolverle
+la misma foto con un poco de viento no justifica ni la espera ni los 0,18 €.
+
+Lo que hace que quieras enseñárselo a alguien es que aparezca una nave sobre tu
+calle. Así que el catálogo y el prompt de visión piden ahora eso: una nave
+nodriza, un superhéroe aterrizando, un kaiju detrás del skyline, un portal, la
+escena derritiéndose en psicodelia.
+
+Se queda **un** modo contenido, "Respira", y solo uno. No por prudencia: es el
+que demuestra que el vídeo es de verdad tu foto, y ese contraste hace que los
+otros impresionen más.
+
+El cambio obligó a partir en dos las guardas del prompt, que es la decisión
+técnica que lo sostiene (`_videoPrompts.ts`):
+
+- **Quién sale en la foto no se toca, en ningún modo.** Misma cara, misma edad,
+  misma ropa, y sale ileso.
+- **El mundo alrededor sí**, y cuánto lo decide la `intensity`.
+
+La versión anterior mezclaba las dos en una sola línea ("no añadas personas,
+animales ni objetos"), y por eso la mitad del catálogo nuevo habría sido
+imposible: el modelo obedece y devuelve cinco segundos de nada.
+
 ## 1. Por qué la visión propone y no elige
 
 Lo obvio sería que GPT mirase la foto y devolviera *el* mejor vídeo. Se descartó
@@ -117,8 +145,12 @@ real.
 - **Cuánto aguanta la guarda de identidad en caras.** Está probada en
   ilustraciones (es de donde viene); en fotos de personas reales, y sobre todo en
   el modo `wild`, hace falta un lote de pruebas antes de fiarse.
-- **Utilidad del modo `subtle` en el mundo real.** Es el que menos se ve y el que
-  más barato sería quitar si nadie lo usa.
+- **Cuánto aguanta H3 Max un `wild` de verdad.** Las guardas están escritas para
+  que aparezca una nave sin que cambie la cara de nadie, pero la única forma de
+  saber dónde se rompe ese equilibrio es un lote de pruebas con caras reales.
+- **El zoom por pellizco.** `applyConstraints({ zoom })` lo expone Chrome en
+  Android y poco más; en Safari de iOS probablemente no haya control de zoom y
+  el indicador no aparezca. Comprobado solo que no estorba cuando falta.
 - **La cámara en Safari de iOS.** `getUserMedia` se pide desde un gesto y sobre
   HTTPS, que es lo que hace la portada, pero el comportamiento de
   `facingMode: 'user'` y el reflejado del selfie solo están probados en

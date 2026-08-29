@@ -131,6 +131,9 @@ const ok = (name, cond, extra) => {
 
   await page.goto(base);
   ok('la portada arranca en la puerta', await page.isVisible('#gate'));
+  // El indicador de zoom solo existe si la cámara lo permite; aquí no hay
+  // cámara, así que no debe verse ni romper nada al pintar el estado.
+  ok('sin cámara no hay control de zoom', !(await page.isVisible('#zoom')));
 
   // Una foto de verdad, generada en el propio navegador: la ruta de subida usa
   // el mismo recorte 9:16 que la cámara, así que prueba el mismo código.

@@ -2,10 +2,10 @@
 // al modelo de vídeo.
 //
 // Un modo no es una etiqueta bonita: es una política de movimiento completa
-// (cuánto se mueve la cámara, qué puede cambiar de la foto, si suena algo). El
+// (cuánto se mueve la cámara, qué puede aparecer en la foto, si suena algo). El
 // texto que acaba en el modelo se compone en `_videoPrompts.ts` a partir de
-// esto, nunca en el cliente (esa es la regla que hace que afinar un modo sea un
-// despliegue y no una actualización de la App Store).
+// esto, nunca en el cliente — esa es la regla que hace que afinar un modo sea
+// un despliegue y no una versión nueva del cliente.
 //
 // Dos orígenes, misma forma:
 //
@@ -13,10 +13,12 @@
 //     que ve. Vuelven al cliente dentro de un ticket firmado (`_ticket.ts`), así
 //     que el texto que el servidor compuso es el mismo que el servidor recibe.
 //  2. **De catálogo**: los de aquí abajo. Son el plan B cuando la visión falla
-//     (sin clave, timeout, 5xx) y el suelo de calidad del prototipo: sirven para
-//     cualquier foto porque no dependen de qué haya en ella.
+//     (sin clave, timeout, 5xx) y el suelo de calidad del prototipo.
 
-/** Cuánta libertad se le da al modelo. Manda sobre la cámara y sobre el aire. */
+/**
+ * Cuánta libertad se le da al modelo. Manda sobre la cámara y, sobre todo,
+ * sobre si pueden APARECER cosas que no estaban en la foto.
+ */
 export type Intensity = 'subtle' | 'cinematic' | 'wild';
 
 export interface Mode {
@@ -25,8 +27,8 @@ export interface Mode {
   label: string;
   emoji: string;
   /**
-   * Qué se mueve, en inglés visual y en imperativo. Es lo ÚNICO específico de
-   * la foto: todo lo demás (identidad, encuadre, audio) lo ponen las guardas.
+   * Qué pasa, en inglés visual y en imperativo. Es lo ÚNICO específico de la
+   * foto: la identidad, el encuadre y el audio los ponen las guardas.
    */
   motion: string;
   intensity: Intensity;
@@ -34,10 +36,18 @@ export interface Mode {
   surprise?: boolean;
 }
 
-// Seis modos que funcionan sobre CUALQUIER foto porque describen fenómenos del
-// aire y de la luz, no del sujeto. Es la diferencia entre "que le dé el viento"
-// (vale para un perro, un plato de pasta o un edificio) y "que mueva la cola"
-// (vale para un perro y estropea las otras dos).
+// El catálogo es casi todo ESPECTÁCULO, y es una corrección deliberada.
+//
+// La primera versión venía de Ridio, donde el vídeo ilustra una novela y lo que
+// se pide es contención: brisa, respiración, la luz cambiando. Aquí eso es un
+// error de producto. Nadie saca el móvil, hace una foto y espera diez segundos
+// para ver la misma foto con un poco de viento. Lo que hace que quieras
+// enseñárselo a alguien es que aparezca una nave sobre tu calle.
+//
+// Se queda UN modo contenido —"Respira"— porque es el que demuestra que el
+// vídeo es de verdad tu foto, y ese contraste hace que los otros impresionen
+// más. El resto describen fenómenos que caben sobre cualquier imagen: algo que
+// llega por el cielo, algo que le pasa a la luz, algo que entra en el fondo.
 export const CATALOG: Mode[] = [
   {
     id: 'breathe',
@@ -48,20 +58,52 @@ export const CATALOG: Mode[] = [
       'Bring the still to life with barely-there movement: a slow breath, an eye blink, hair and fabric stirring in a faint draught, dust motes drifting through the light.',
   },
   {
-    id: 'cinematic',
-    label: 'Cine',
-    emoji: '🎬',
-    intensity: 'cinematic',
+    id: 'ufo',
+    label: 'Nave',
+    emoji: '🛸',
+    intensity: 'wild',
     motion:
-      'Play the moment as a single cinematic shot: shallow depth of field, a slow deliberate drift of the camera, light raking across the subject, the atmosphere settling around it.',
+      'A vast alien mothership slides silently into the sky above the scene, its underside glowing. Its shadow sweeps across everything below, light beams rake down, and dust and loose objects lift in the downdraft.',
   },
   {
-    id: 'weather',
+    id: 'hero',
+    label: 'Superhéroe',
+    emoji: '🦸',
+    intensity: 'wild',
+    motion:
+      'A caped figure drops out of the sky and lands hard in the scene, cracking the ground and blasting a ring of dust outward, then rises slowly to standing as the debris settles around them.',
+  },
+  {
+    id: 'psychedelic',
+    label: 'Psicodelia',
+    emoji: '🌀',
+    intensity: 'wild',
+    motion:
+      'Reality melts into a psychedelic trip: colours bleed and oversaturate into impossible hues, surfaces ripple and breathe, fractal patterns bloom outwards and kaleidoscopic trails follow every movement.',
+  },
+  {
+    id: 'kaiju',
+    label: 'Kaiju',
+    emoji: '🦖',
+    intensity: 'wild',
+    motion:
+      'A colossal creature rises far behind the scene, dwarfing everything. The ground trembles, dust shakes loose, birds scatter, and it lets out a roar that ripples the air.',
+  },
+  {
+    id: 'portal',
+    label: 'Portal',
+    emoji: '🌌',
+    intensity: 'wild',
+    motion:
+      'A glowing rift tears open in mid-air within the scene, spilling light and drifting embers. Through it another world is faintly visible, and the air around its edges warps and shimmers.',
+  },
+  {
+    id: 'storm',
     label: 'Tormenta',
-    emoji: '🌧️',
+    emoji: '🌩️',
     intensity: 'cinematic',
     motion:
-      'Weather rolls in over the scene: the light drops and turns cold, wind picks up, rain or snow starts falling through the frame, surfaces darken and glisten.',
+      'A violent storm rolls in fast: the light drops and turns cold and blue, wind whips through the frame, rain lashes down and lightning cracks across the sky, throwing hard white flashes over everything.',
   },
   {
     id: 'goldenhour',
@@ -72,27 +114,31 @@ export const CATALOG: Mode[] = [
       'The light warms and lowers into golden hour: long amber light sweeps across the scene, shadows stretch, dust and haze catch the sun, everything glows.',
   },
   {
-    id: 'dreamy',
-    label: 'Sueño',
-    emoji: '💫',
-    intensity: 'wild',
-    motion:
-      'The scene slips into a daydream: colours bloom, soft light leaks and floating particles drift in, the edges of the frame breathe and shimmer gently.',
-  },
-  {
     id: 'chaos',
     label: 'Sorpresa',
     emoji: '🎲',
     intensity: 'wild',
     surprise: true,
     motion:
-      'Something unexpected but harmless happens in the scene: an improbable creature wanders through the background, gravity loosens for a second, the weather does something it should not. Keep it playful and keep the subject intact.',
+      'Something gloriously unexpected takes over the scene: an absurd creature, a physics-defying event, a sudden genre shift into something nobody would predict from this photo. Make it funny and harmless, and keep the people in the frame exactly as they are.',
   },
 ];
 
 export const byId = (id: string): Mode | undefined => CATALOG.find((m) => m.id === id);
 
-/** El modo de catálogo que se usa cuando ni siquiera llega un id válido. */
+/**
+ * Los cuatro del plan B, elegidos a mano y en este orden.
+ *
+ * A mano y no "uno de cada intensidad": el carrusel de respaldo tiene que
+ * parecer una selección, no un filtro sobre una lista. Uno contenido para
+ * anclar, dos que impresionan, y la sorpresa.
+ */
+const FALLBACK_IDS = ['breathe', 'ufo', 'psychedelic', 'chaos'];
+
+export const fallbackModes = (): Mode[] =>
+  FALLBACK_IDS.map((id) => byId(id)).filter(Boolean) as Mode[];
+
+/** El modo que se usa en una llamada directa, sin ticket ni id. */
 export const FALLBACK_MODE = CATALOG[0];
 
 export const isIntensity = (v: unknown): v is Intensity =>

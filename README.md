@@ -54,6 +54,12 @@ convertiría el prototipo en un generador de vídeo con prompt libre y nuestra
 clave; se firma con HMAC (`api/_ticket.ts`) y se verifica al volver. El cliente
 recibe un sobre cerrado y lo devuelve sin abrirlo.
 
+La clave de firma se deriva de un secreto del entorno, y eso no es un detalle:
+`/api/suggest` y `/api/video` son dos funciones serverless distintas y **nunca**
+comparten proceso, así que un secreto generado al arrancar no vale para nada
+— el ticket que firma una no verifica jamás en la otra. Hay una prueba que
+firma en una instancia y verifica en otra.
+
 **El backend tiene cerradura, y falla abierto hasta que la pones.** Sin
 `VIVO_APP_SECRET`, `/api/video` está abierto a quien encuentre la URL — y cada
 llamada gasta dinero. En cuanto la variable existe, toda petición debe traer esa
@@ -98,9 +104,10 @@ redespliegue:
 | `OPENAI_API_KEY` | El carrusel sale genérico (catálogo) y no hay moderación. |
 | `VIVO_APP_SECRET` | **`/api/video` queda abierto a quien encuentre la URL**, y cada llamada cuesta ~0,18 €. Ponla a la vez que las otras dos. |
 
-`VIVO_TICKET_SECRET` (cualquier cadena de 16+ caracteres) es opcional pero
-recomendable: sin ella cada instancia serverless firma con un secreto propio y
-sale un "ese modo ha caducado" de vez en cuando.
+`VIVO_TICKET_SECRET` es opcional de verdad: si no está, la clave de firma de los
+tickets se deriva de `FALAI_TOKEN`, que sin ella no habría vídeo que animar de
+todas formas. Ponerla solo hace falta si algún día se rotan las claves de
+proveedor sin querer invalidar los tickets en vuelo.
 
 `GET /api/health` dice cuáles ve el servidor sin revelar ninguna.
 

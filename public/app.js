@@ -19,7 +19,7 @@ const el = {
   gate: $('gate'), start: $('start'), upload: $('upload'), gateError: $('gateError'),
   status: $('status'), carousel: $('carousel'),
   again: $('again'), peek: $('peek'),
-  shutter: $('shutter'), core: $('shutterCore'),
+  shutter: $('shutter'), core: $('shutterCore'), zoom: $('zoom'),
   sheet: $('sheet'), sheetTitle: $('sheetTitle'), sheetBody: $('sheetBody'),
 };
 
@@ -34,6 +34,7 @@ const S = {
   index: 0,
   clip: null,
   muted: true,
+  zoom: null,          // { min, max, value } si la cámara lo permite
 };
 
 // ─── El backend ──────────────────────────────────────────────────────────────
@@ -120,23 +121,116 @@ const animate = (base64, mode) =>
 
 // ─── La cámara ───────────────────────────────────────────────────────────────
 
+/** La proporción del hueco visible. Manda sobre la cámara y sobre la captura. */
+const frameAspect = () => {
+  const box = el.frame.getBoundingClientRect();
+  return box.width && box.height ? box.width / box.height : 9 / 16;
+};
+
 async function openCamera() {
   stopCamera();
+
+  // Se pide la PROPORCIÓN de la pantalla, no una resolución.
+  //
+  // La primera versión pedía `width: 1080, height: 1920`. El navegador cumple
+  // eso como puede, y en un móvil lo que hace es coger el sensor apaisado y
+  // RECORTARLO al centro hasta que sea vertical — es decir, hace zoom. Se veía
+  // como una cámara con el zoom pegado, porque literalmente lo era, y encima
+  // encima se le sumaba el recorte de `object-fit: cover` al pintarlo.
+  //
+  // Pidiendo `aspectRatio` y dejando la resolución libre, el navegador elige el
+  // modo del sensor que mejor encaja y el recorte que queda es el mínimo
+  // posible. El campo de visión vuelve a ser el de la cámara.
   S.stream = await navigator.mediaDevices.getUserMedia({
-    // Se pide vertical: en un móvil el encuadre es alto, y con la petición por
-    // defecto el navegador entrega un 16:9 apaisado del que habría que tirar
-    // más de la mitad al recortar.
-    video: { facingMode: S.facing, width: { ideal: 1080 }, height: { ideal: 1920 } },
+    video: { facingMode: S.facing, aspectRatio: { ideal: frameAspect() } },
     audio: false,
   });
   el.preview.srcObject = S.stream;
   el.preview.classList.toggle('mirrored', S.facing === 'user');
   await el.preview.play().catch(() => {});
+  readZoom();
 }
 
 function stopCamera() {
   S.stream?.getTracks().forEach((t) => t.stop());
   S.stream = null;
+  S.zoom = null;
+}
+
+// ─── Zoom ────────────────────────────────────────────────────────────────────
+//
+// Opcional de verdad: `zoom` es una capacidad que muchos navegadores de
+// escritorio y algún móvil no exponen. Si no está, el control no aparece — es
+// preferible a un botón que no hace nada.
+
+const track = () => S.stream?.getVideoTracks?.()[0] || null;
+
+function readZoom() {
+  const caps = track()?.getCapabilities?.() || {};
+  S.zoom = caps.zoom
+    ? {
+        min: caps.zoom.min ?? 1,
+        max: caps.zoom.max ?? 1,
+        value: track().getSettings?.().zoom ?? caps.zoom.min ?? 1,
+      }
+    : null;
+  // Un rango de un solo punto es lo mismo que no tener zoom.
+  if (S.zoom && S.zoom.max <= S.zoom.min) S.zoom = null;
+  paintZoom();
+}
+
+async function setZoom(v) {
+  if (!S.zoom) return;
+  const value = Math.min(S.zoom.max, Math.max(S.zoom.min, v));
+  if (Math.abs(value - S.zoom.value) < 0.01) return;
+  try {
+    await track().applyConstraints({ advanced: [{ zoom: value }] });
+    S.zoom.value = value;
+    paintZoom();
+  } catch {
+    /* el dispositivo lo ha rechazado: se queda donde estaba */
+  }
+}
+
+function paintZoom() {
+  const on = !!S.zoom && S.stage === 'live';
+  el.zoom.hidden = !on;
+  if (on) el.zoom.textContent = `${(S.zoom.value / S.zoom.min).toFixed(1)}×`;
+}
+
+// Pellizco para acercar, que es el gesto que ya tiene todo el mundo en el dedo.
+// Con eventos de puntero y no de toque: los mismos dos dedos valen en un
+// trackpad, y no hay que mantener dos ramas.
+const pointers = new Map();
+let pinchStart = null;
+
+el.frame.addEventListener('pointerdown', (e) => {
+  if (S.stage !== 'live') return;
+  pointers.set(e.pointerId, e);
+  if (pointers.size === 2) pinchStart = { span: pinchSpan(), zoom: S.zoom?.value ?? 1 };
+});
+
+el.frame.addEventListener('pointermove', (e) => {
+  if (!pointers.has(e.pointerId)) return;
+  pointers.set(e.pointerId, e);
+  if (pointers.size !== 2 || !pinchStart || !S.zoom) return;
+  e.preventDefault();
+  const factor = pinchSpan() / pinchStart.span;
+  // Sobre el rango del dispositivo, no sobre el factor crudo: en una cámara con
+  // zoom de 1 a 8 un pellizco corto se comería todo el recorrido.
+  setZoom(pinchStart.zoom * factor);
+});
+
+const endPointer = (e) => {
+  pointers.delete(e.pointerId);
+  if (pointers.size < 2) pinchStart = null;
+};
+el.frame.addEventListener('pointerup', endPointer);
+el.frame.addEventListener('pointercancel', endPointer);
+
+function pinchSpan() {
+  const [a, b] = [...pointers.values()];
+  return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) || 1;
 }
 
 // Lo que se ve es lo que se manda. Literalmente, y aquí es donde se cumple.
@@ -163,8 +257,7 @@ function coverCrop(w, h, aspect) {
 const even = (n) => Math.max(2, Math.round(n / 2) * 2);
 
 function grab(source, w, h, mirror) {
-  const box = el.frame.getBoundingClientRect();
-  const aspect = box.width && box.height ? box.width / box.height : w / h;
+  const aspect = frameAspect();
   const out = aspect >= 1
     ? { w: LONG_SIDE, h: even(LONG_SIDE / aspect) }
     : { w: even(LONG_SIDE * aspect), h: LONG_SIDE };
@@ -293,6 +386,7 @@ function setStage(stage) {
 
   el.carousel.classList.toggle('locked', stage !== 'pick');
   chips().forEach((c, i) => c.classList.toggle('busy', stage === 'rendering' && i === S.index));
+  paintZoom();
 }
 
 function say(text, isError = false) {
@@ -425,6 +519,10 @@ el.again.addEventListener('click', () => {
   setStage('pick');
   say('');
 });
+
+// Tocar el indicador vuelve al gran angular, que es a donde se quiere volver
+// nueve de cada diez veces.
+el.zoom.addEventListener('click', () => setZoom(S.zoom?.min ?? 1));
 
 el.flip.addEventListener('click', async () => {
   S.facing = S.facing === 'environment' ? 'user' : 'environment';

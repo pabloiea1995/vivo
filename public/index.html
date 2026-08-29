@@ -33,6 +33,9 @@
 
     <button class="round tr" id="flip" type="button" title="Cambiar de cámara" aria-label="Cambiar de cámara">⟲</button>
     <button class="round tr" id="mute" type="button" title="Sonido" aria-label="Sonido" hidden>🔇</button>
+    <!-- Solo aparece si la cámara expone `zoom`: un botón que no hace nada es
+         peor que ninguno. Pellizcar sobre el encuadre hace lo mismo. -->
+    <button class="zoom" id="zoom" type="button" aria-label="Volver al gran angular" hidden>1.0×</button>
 
     <!-- La puerta de entrada. getUserMedia necesita un gesto del usuario en
          Safari, así que el permiso se pide desde aquí y no al cargar. -->

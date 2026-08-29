@@ -14,7 +14,7 @@ import { applyAccessCheck } from './_origin';
 import { readBody, readPhoto, safeParse, methodGuard } from './_http';
 import { moderateImage } from './_moderation';
 import { buildVisionRequest, VISION_MODEL } from './_visionPrompts';
-import { CATALOG, isIntensity, type Intensity, type Mode } from './_modes';
+import { fallbackModes, isIntensity, type Intensity, type Mode } from './_modes';
 import { signTicket } from './_ticket';
 import { isKnownTextModel, textCostMicros, microsToEur } from './_pricing';
 
@@ -61,7 +61,7 @@ export default async function handler(req: any, res: any): Promise<void> {
   }
 
   const vision = await proposeModes(photo.dataUri, locale);
-  const modes = vision.modes.length ? vision.modes : catalogModes();
+  const modes = vision.modes.length ? vision.modes : fallbackModes();
 
   res.setHeader('x-vivo-source', vision.modes.length ? 'vision' : 'catalog');
   res.status(200).json({
@@ -90,15 +90,6 @@ const toWire = async (m: Mode): Promise<SuggestedMode> => ({
   surprise: !!m.surprise,
   ticket: await signTicket({ motion: m.motion, intensity: m.intensity, label: m.label }),
 });
-
-// Tres del catálogo repartidos por intensidad, más la sorpresa. Es el plan B, y
-// aun así tiene que parecer un carrusel elegido, no una lista alfabética.
-function catalogModes(): Mode[] {
-  const pick = (i: Intensity) => CATALOG.find((m) => m.intensity === i && !m.surprise);
-  const surprise = CATALOG.find((m) => m.surprise) as Mode;
-  const three = [pick('subtle'), pick('cinematic'), pick('wild')].filter(Boolean) as Mode[];
-  return [...three, surprise];
-}
 
 interface VisionResult {
   modes: Mode[];

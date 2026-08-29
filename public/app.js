@@ -135,8 +135,8 @@ async function openCamera() {
   // La primera versión pedía `width: 1080, height: 1920`. El navegador cumple
   // eso como puede, y en un móvil lo que hace es coger el sensor apaisado y
   // RECORTARLO al centro hasta que sea vertical — es decir, hace zoom. Se veía
-  // como una cámara con el zoom pegado, porque literalmente lo era, y encima
-  // encima se le sumaba el recorte de `object-fit: cover` al pintarlo.
+  // como una cámara con el zoom pegado, porque literalmente lo era, y además
+  // se le sumaba el recorte de `object-fit: cover` al pintarlo.
   //
   // Pidiendo `aspectRatio` y dejando la resolución libre, el navegador elige el
   // modo del sensor que mejor encaja y el recorte que queda es el mínimo

@@ -65,8 +65,6 @@ const PHOTO_GUARD = [
   'illustration, video-game render or plastic skin.',
 ].join(' ');
 
-// Cámara: lo único que la intensidad mueve de verdad. Un travelling en cinco
-// segundos reencuadra la foto, y la foto la encuadró el usuario.
 // La cámara se mantiene corta incluso en `wild`, y no por prudencia: el
 // encuadre lo eligió el usuario, y un travelling en cinco segundos lo recompone
 // hasta que la foto de partida ya no se reconoce. La espectacularidad tiene que

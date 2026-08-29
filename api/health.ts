@@ -17,6 +17,7 @@ export default function handler(req: any, res: any): void {
       openai: !!process.env.OPENAI_API_KEY,
       fal: !!(process.env.FALAI_TOKEN || process.env.FAL_KEY),
       ticketSecret: !!process.env.VIVO_TICKET_SECRET,
+      appSecret: !!process.env.VIVO_APP_SECRET,
     },
     visionModel: describeVisionPrompt().model,
     videoPromoActive: videoPromoActive(),

@@ -180,9 +180,10 @@ Dos consecuencias de diseño:
   llamar a nadie. Cuesta un clip, que es lo que tiene que costar.
 
 No hay cuota ni límite por usuario: es un prototipo sin registro. La cerradura
-`VIVO_APP_SECRET` para al paseante que encuentre la URL, pero no al que instale
-la app: todos los instaladores comparten la misma clave, así que un binario
-distribuido la regala. Antes de enseñárselo a más de cinco personas hace falta lo
+`VIVO_APP_SECRET` para al paseante que encuentre la URL, pero no a quien reciba
+el enlace: la clave viaja en él (`…/?key=…`) y se queda en el navegador, así que
+compartir la app es compartir la llave. Y el repositorio es público, con lo que
+la dirección del despliegue la tiene cualquiera. Antes de enseñárselo a más de cinco personas hace falta lo
 que Ridio tiene en `api/_quota.ts`: un contador por llamante con presupuesto
 real.
 

@@ -6,8 +6,13 @@ GPT mira lo que acabas de fotografiar y propone cuatro formas de animarlo —tre
 pensadas para *esa* foto y una sorpresa—. Eliges una en un carrusel de filtros y
 el modelo de vídeo genera cinco segundos que **empiezan exactamente en tu foto**.
 
-**En marcha:** https://vivo-two.vercel.app — pendiente de que el proyecto de
-Vercel tenga sus variables de entorno (ver más abajo).
+**En marcha:** https://vivo-two.vercel.app
+
+> ⚠️ **Este repositorio es público y anuncia la URL del despliegue.** Sin
+> `VIVO_APP_SECRET` puesta, `/api/video` es un grifo de dinero con dirección
+> conocida: cualquiera que lea esto puede pedir clips a ~0,18 € cada uno con
+> nuestra clave de fal. Compruébalo en `/api/health` — tiene que decir
+> `"appSecret": true`.
 
 Prototipo. Una página, tres funciones serverless, ningún registro, ninguna base
 de datos, ningún paso de compilación.
